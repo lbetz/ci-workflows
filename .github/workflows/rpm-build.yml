@@ -3,6 +3,11 @@ name: Build RPM (Reusable)
 on:
   workflow_call:
     inputs:
+      ci_workflows_ref:
+        description: "Branch oder Tag für ci-workflows"
+        required: false
+        default: "main"
+        type: string
       distros:
         description: "Liste unterstützter Distributionen"
         required: true
@@ -25,12 +30,20 @@ jobs:
       - name: Checkout project source
         uses: actions/checkout@v4
 
+      - name: Remove existing ci-workflows directory
+        run: rm -rf .ci-workflows
+
       - name: Checkout lbetz/ci-workflows (for hooks and helpers)
         uses: actions/checkout@v4
         with:
           repository: lbetz/ci-workflows
-          ref: main
+          ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
+
+      - name: Debug ci-workflows checkout
+        run: |
+          echo "=== CI-WORKFLOWS CONTENT ==="
+          ls -R .ci-workflows
 
       - name: Setup build environment
         run: |
@@ -79,14 +92,8 @@ jobs:
           echo "[BUILD] Running rpm build for ${distro}-${arch}"
       
           # Container-Image ermitteln (wie zuvor)
-          case "$distro" in
-            el8) container_image="almalinux:8" ;;
-            el9) container_image="almalinux:9" ;;
-            el10) container_image="almalinux:10" ;;
-            fedora43) container_image="fedora:43" ;;
-            fedora44) container_image="fedora:44" ;;
-            *)          container_image="almalinux:9" ;;
-          esac
+          source "$PWD/.ci-workflows/hooks/lib/container_images.sh"
+          container_image=$(get_container_image "$distro")
       
           docker run --rm -v "$PWD":/src "$container_image" /bin/bash -c '
             set -e
@@ -132,14 +139,8 @@ jobs:
           arch=${{ matrix.arch }}
       
           # Container-Image ermitteln (wie zuvor)
-          case "$distro" in
-            el8) container_image="almalinux:8" ;;
-            el9) container_image="almalinux:9" ;;
-            el10) container_image="almalinux:10" ;;
-            fedora43) container_image="fedora:43" ;;
-            fedora44) container_image="fedora:44" ;;
-            *)          container_image="almalinux:9" ;;
-          esac
+          source "$PWD/.ci-workflows/hooks/lib/container_images.sh"
+          container_image=$(get_container_image "$distro")
       
           docker run --rm -v "$PWD":/src "$container_image" /bin/bash -c '
             set -e
