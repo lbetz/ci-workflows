@@ -30,20 +30,12 @@ jobs:
       - name: Checkout project source
         uses: actions/checkout@v4
 
-      - name: Remove existing ci-workflows directory
-        run: rm -rf .ci-workflows
-
       - name: Checkout lbetz/ci-workflows (for hooks and helpers)
         uses: actions/checkout@v4
         with:
           repository: lbetz/ci-workflows
           ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
-
-      - name: Debug ci-workflows checkout
-        run: |
-          echo "=== CI-WORKFLOWS CONTENT ==="
-          ls -R .ci-workflows
 
       - name: Setup build environment
         run: |
@@ -57,7 +49,8 @@ jobs:
           elif command -v yum >/dev/null 2>&1; then
             sudo yum install -y rpm-build createrepo_c
           else
-            echo "⚠️ Kein bekanntes Paketmanagementsystem gefunden!"
+            echo "❌ Kein bekanntes Paketmanagementsystem gefunden!" >&2
+            exit 1
           fi
       
           chmod +x .ci-workflows/hooks/*.sh || true
@@ -67,7 +60,7 @@ jobs:
       - name: Run predefined hook chain (only build phase)
         run: |
           set -e
-          HOOKS=("pre_build" "post_build")   # pre_test / post_test hier entfernen!
+          HOOKS=("pre_build" "post_build")
 
           for HOOK in "${HOOKS[@]}"; do
             GLOBAL_HOOK=".ci-workflows/hooks/${HOOK}.sh"
@@ -89,9 +82,10 @@ jobs:
           set -e
           distro=${{ matrix.distro }}
           arch=${{ matrix.arch }}
+
           echo "[BUILD] Running rpm build for ${distro}-${arch}"
       
-          # Container-Image ermitteln (wie zuvor)
+          # Container-Image ermitteln
           source "$PWD/.ci-workflows/hooks/lib/container_images.sh"
           container_image=$(get_container_image "$distro")
       
@@ -121,7 +115,7 @@ jobs:
             mkdir -p SOURCES
             cd SOURCES
             if [[ ! -f $(basename "$RESOLVED_SOURCE") ]]; then
-              echo "[DOWNLOAD] Lade Quellpaket herunter..."
+              echo "[DOWNLOAD] Lade Quellpaket $RESOLVED_SOURCE herunter..."
               curl -fsSL -O "$RESOLVED_SOURCE"
             else
               echo "[INFO] Source bereits vorhanden."
@@ -133,8 +127,42 @@ jobs:
             rpmbuild -ba --define "_topdir /src" "$SPEC_FILE"
           '
 
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.distro }}-${{ matrix.arch }}
+          path: RPMS/${{ matrix.arch }}/*.rpm
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ${{ fromJSON(inputs.distros) }}
+        arch: ${{ fromJSON(inputs.architectures) }}
+
+    steps:
+      - name: Checkout project source
+        uses: actions/checkout@v4
+
+      - name: Checkout ci-workflows
+        uses: actions/checkout@v4
+        with:
+          repository: lbetz/ci-workflows
+          ref: ${{ inputs.ci_workflows_ref }}
+          path: .ci-workflows
+
+      - name: Download RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: rpm-${{ matrix.distro }}-${{ matrix.arch }}
+          path: rpms
+
       - name: Test RPM
         run: |
+          set -e
           distro=${{ matrix.distro }}
           arch=${{ matrix.arch }}
       
@@ -153,12 +181,6 @@ jobs:
             fi
       
             echo "[TEST] Installing built RPM..."
-            dnf install -y --allowerasing --nobest /src/RPMS/x86_64/*.rpm
+            dnf install -y --allowerasing --nobest /src/rpms/*.rpm
           '
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rpm-${{ matrix.distro }}-${{ matrix.arch }}
-          path: RPMS/${{ matrix.arch }}/*.rpm
 
