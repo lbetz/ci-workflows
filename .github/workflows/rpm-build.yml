@@ -6,10 +6,7 @@ on:
       ci_workflows_ref:
         type: string
         default: "main"
-      distros:
-        type: string
-        required: true
-      architectures:
+      matrix:
         type: string
         required: true
 
@@ -26,9 +23,7 @@ jobs:
 
     strategy:
       fail-fast: false
-      matrix:
-        distro: ${{ fromJSON(inputs.distros) }}
-        arch:   ${{ fromJSON(inputs.architectures) }}
+      matrix: ${{ fromJSON(inputs.matrix) }}
 
     steps:
       - name: Checkout project
@@ -128,9 +123,7 @@ jobs:
 
     strategy:
       fail-fast: false
-      matrix:
-        distro: ${{ fromJSON(inputs.distros) }}
-        arch:   ${{ fromJSON(inputs.architectures) }}
+      matrix: ${{ fromJSON(inputs.matrix) }}
 
     steps:
       - name: Checkout project
