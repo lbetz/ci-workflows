@@ -9,19 +9,27 @@ on:
         default: "main"
         type: string
       distros:
-        description: "Liste unterstützter Distributionen"
+        description: "Liste unterstützter Distributionen (JSON)"
         required: true
         type: string
       architectures:
-        description: "Liste unterstützter Architekturen"
+        description: "Liste unterstützter Architekturen (JSON)"
         required: true
         type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-rpm-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
         distro: ${{ fromJSON(inputs.distros) }}
         arch: ${{ fromJSON(inputs.architectures) }}
@@ -30,108 +38,77 @@ jobs:
       - name: Checkout project source
         uses: actions/checkout@v4
 
-      - name: Checkout lbetz/ci-workflows (for hooks and helpers)
+      - name: Checkout lbetz/ci-workflows (hooks, helpers, container scripts)
         uses: actions/checkout@v4
         with:
           repository: lbetz/ci-workflows
           ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
 
-      - name: Setup build environment
+      - name: Map arch to docker platform
+        id: platform
         run: |
-          set -e
-          echo "[SETUP] Preparing build tools..."
-          if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y rpm createrepo-c
-          elif command -v dnf >/dev/null 2>&1; then
-            sudo dnf install -y rpm-build createrepo_c
-          elif command -v yum >/dev/null 2>&1; then
-            sudo yum install -y rpm-build createrepo_c
-          else
-            echo "❌ Kein bekanntes Paketmanagementsystem gefunden!" >&2
-            exit 1
-          fi
-      
-          chmod +x .ci-workflows/hooks/*.sh || true
-          chmod +x .ci-workflows/hooks/lib/*.sh || true
-          chmod +x .github/hooks/*.sh 2>/dev/null || true
-
-      - name: Run predefined hook chain (only build phase)
-        run: |
-          set -e
-          HOOKS=("pre_build" "post_build")
-
-          for HOOK in "${HOOKS[@]}"; do
-            GLOBAL_HOOK=".ci-workflows/hooks/${HOOK}.sh"
-            LOCAL_HOOK=".github/hooks/${HOOK}.sh"
-
-            if [ -f "$GLOBAL_HOOK" ]; then
-              echo "[CI] Executing global hook: $GLOBAL_HOOK"
-              bash "$GLOBAL_HOOK"
-            fi
-
-            if [ -f "$LOCAL_HOOK" ]; then
-              echo "[CI] Executing project hook: $LOCAL_HOOK"
-              bash "$LOCAL_HOOK"
-            fi
-          done
-
-      - name: Build RPM
-        run: |
-          set -e
-          distro=${{ matrix.distro }}
-          arch=${{ matrix.arch }}
-
-          echo "[BUILD] Running rpm build for ${distro}-${arch}"
-      
-          # Container-Image ermitteln
-          source "$PWD/.ci-workflows/hooks/lib/container_images.sh"
-          container_image=$(get_container_image "$distro")
-      
-          docker run --rm -v "$PWD":/src "$container_image" /bin/bash -c '
-            set -e
-            dnf install -y --allowerasing rpm-build redhat-rpm-config git tar gzip
-      
-            cd /src
-            SPEC_FILE=$(find . -name "*.spec" | head -n 1)
-            if [[ -z "$SPEC_FILE" ]]; then
-              echo "❌ Keine .spec-Datei gefunden" >&2
+          set -euo pipefail
+          case "${{ matrix.arch }}" in
+            x86_64)  echo "platform=linux/amd64"   >> "$GITHUB_OUTPUT" ;;
+            aarch64) echo "platform=linux/arm64"   >> "$GITHUB_OUTPUT" ;;
+            ppc64le) echo "platform=linux/ppc64le" >> "$GITHUB_OUTPUT" ;;
+            s390x)   echo "platform=linux/s390x"   >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "❌ Unsupported arch: ${{ matrix.arch }}" >&2
               exit 1
-            fi
-      
-            echo "[INFO] Verwende SPEC-Datei: $SPEC_FILE"
-      
-            NAME=$(grep -E "^Name:" "$SPEC_FILE" | awk "{print \$2}")
-            VERSION=$(grep -E "^Version:" "$SPEC_FILE" | awk "{print \$2}")
-            SOURCE_URL=$(grep -E "^Source0:" "$SPEC_FILE" | awk "{\$1=\"\"; print substr(\$0,2)}")
-            RESOLVED_SOURCE=$(echo "$SOURCE_URL" | sed "s|%{version}|$VERSION|g")
-      
-            echo "[INFO] Name: $NAME"
-            echo "[INFO] Version: $VERSION"
-            echo "[INFO] Source URL: $RESOLVED_SOURCE"
-      
-            # Optional: lade Source herunter (wenn nicht im SOURCES-Verzeichnis vorhanden)
-            mkdir -p SOURCES
-            cd SOURCES
-            if [[ ! -f $(basename "$RESOLVED_SOURCE") ]]; then
-              echo "[DOWNLOAD] Lade Quellpaket $RESOLVED_SOURCE herunter..."
-              curl -fsSL -O "$RESOLVED_SOURCE"
-            else
-              echo "[INFO] Source bereits vorhanden."
-            fi
-            cd ..
-      
-            # RPM bauen
-            echo "[BUILD] Starte rpmbuild..."
-            rpmbuild -ba --define "_topdir /src" "$SPEC_FILE"
-          '
+              ;;
+          esac
 
-      - name: Upload artifacts
+      - name: Set up QEMU (for cross-arch builds)
+        if: steps.platform.outputs.platform != 'linux/amd64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ steps.platform.outputs.platform }}
+
+      - name: Setup runner build tools (runner hooks)
+        run: |
+          set -euo pipefail
+          bash .ci-workflows/hooks/pre_build_in_runner.sh
+
+      - name: Resolve container image
+        id: image
+        run: |
+          set -euo pipefail
+          source "$PWD/.ci-workflows/hooks/lib/container_images.sh"
+          image=$(get_container_image "${{ matrix.distro }}")
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
+      - name: Build RPM in container
+        env:
+          CONTAINER_IMAGE: ${{ steps.image.outputs.image }}
+          PLATFORM:        ${{ steps.platform.outputs.platform }}
+          TARGET_ARCH:     ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/rpmbuild"
+          docker run --rm \
+            --platform "${PLATFORM}" \
+            -e TARGET_ARCH \
+            -v "${GITHUB_WORKSPACE}":/workspace \
+            -w /workspace \
+            "${CONTAINER_IMAGE}" \
+            /bin/bash /workspace/.ci-workflows/hooks/rpmbuild_in_container.sh
+
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          find rpmbuild/RPMS -type f -name "*.rpm" -exec cp -v {} out/ \;
+          ls -la out/
+
+      - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rpm-${{ matrix.distro }}-${{ matrix.arch }}
-          path: RPMS/${{ matrix.arch }}/*.rpm
+          path: out/*.rpm
+          if-no-files-found: error
+          retention-days: 7
 
   test:
     needs: build
@@ -160,27 +137,46 @@ jobs:
           name: rpm-${{ matrix.distro }}-${{ matrix.arch }}
           path: rpms
 
-      - name: Test RPM
+      - name: Map arch to docker platform
+        id: platform
         run: |
-          set -e
-          distro=${{ matrix.distro }}
-          arch=${{ matrix.arch }}
-      
-          # Container-Image ermitteln (wie zuvor)
+          set -euo pipefail
+          case "${{ matrix.arch }}" in
+            x86_64)  echo "platform=linux/amd64"   >> "$GITHUB_OUTPUT" ;;
+            aarch64) echo "platform=linux/arm64"   >> "$GITHUB_OUTPUT" ;;
+            ppc64le) echo "platform=linux/ppc64le" >> "$GITHUB_OUTPUT" ;;
+            s390x)   echo "platform=linux/s390x"   >> "$GITHUB_OUTPUT" ;;
+            *) echo "❌ Unsupported arch"; exit 1 ;;
+          esac
+
+      - name: Set up QEMU
+        if: steps.platform.outputs.platform != 'linux/amd64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ steps.platform.outputs.platform }}
+
+      - name: Setup runner test tools (runner hooks)
+        run: |
+          set -euo pipefail
+          bash .ci-workflows/hooks/pre_test_in_runner.sh
+
+      - name: Resolve container image
+        id: image
+        run: |
+          set -euo pipefail
           source "$PWD/.ci-workflows/hooks/lib/container_images.sh"
-          container_image=$(get_container_image "$distro")
-      
-          docker run --rm -v "$PWD":/src "$container_image" /bin/bash -c '
-            set -e
-            # führe globale und projekt-hooks IM container aus – falls vorhanden
-            if [ -f /src/.ci-workflows/hooks/pre_test.sh ]; then
-              bash /src/.ci-workflows/hooks/pre_test.sh
-            fi
-            if [ -f /src/.github/hooks/pre_test.sh ]; then
-              bash /src/.github/hooks/pre_test.sh
-            fi
-      
-            echo "[TEST] Installing built RPM..."
-            dnf install -y --allowerasing --nobest /src/rpms/*.rpm
-          '
+          echo "image=$(get_container_image "${{ matrix.distro }}")" >> "$GITHUB_OUTPUT"
+
+      - name: Install & smoke-test RPM in container
+        env:
+          CONTAINER_IMAGE: ${{ steps.image.outputs.image }}
+          PLATFORM:        ${{ steps.platform.outputs.platform }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --platform "${PLATFORM}" \
+            -v "${GITHUB_WORKSPACE}":/workspace \
+            -w /workspace \
+            "${CONTAINER_IMAGE}" \
+            /bin/bash /workspace/.ci-workflows/hooks/rpmtest_in_container.sh
 
