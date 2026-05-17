@@ -11,10 +11,14 @@ if is_el || is_fedora; then
     python3 \
     python3-pip \
     diffutils \
-    systemd
+    systemd \
+    which \
+    tar \
+    gzip
   dnf clean all
 else
   echo "❌ Unsupported distro for RPM test: $ID"
   exit 1
 fi
 
+log "Global pre-test container completed successfully."

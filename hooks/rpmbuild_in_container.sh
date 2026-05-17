@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "[ERROR] Build failed at line $LINENO" >&2' ERR
 
-# Libs laden
 source /workspace/.ci-workflows/hooks/lib/distro.sh
 source /workspace/.ci-workflows/hooks/lib/common.sh || true
 
 log "Starting rpmbuild in container – distro: $ID ($ID_LIKE)"
 
 # ---------------------------------------------------------------------------
-# PRE-BUILD HOOK
+# 1. GLOBAL PRE-BUILD HOOK
 # ---------------------------------------------------------------------------
 if [ -f /workspace/.ci-workflows/hooks/pre_build_in_container.sh ]; then
   log "Running global pre_build_in_container hook..."
@@ -16,7 +16,7 @@ if [ -f /workspace/.ci-workflows/hooks/pre_build_in_container.sh ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# PRE-BUILD HOOK (Projekt)
+# 2. PROJECT PRE-BUILD HOOK
 # ---------------------------------------------------------------------------
 if [ -f /workspace/.github/hooks/pre_build.sh ]; then
   log "Running project pre_build hook..."
@@ -24,25 +24,59 @@ if [ -f /workspace/.github/hooks/pre_build.sh ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# BUILD
+# 3. RPMBUILD DIRECTORY SETUP
 # ---------------------------------------------------------------------------
-mkdir -p /workspace/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+log "Setting up rpmbuild directory structure..."
+TOPDIR="/workspace/rpmbuild"
+mkdir -p "$TOPDIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 
-SPECFILE=$(ls /workspace/*.spec | head -n1)
-cp -v "$SPECFILE" /workspace/rpmbuild/SPECS/
+# ---------------------------------------------------------------------------
+# 4. SPEC FILE VALIDATION
+# ---------------------------------------------------------------------------
+log "Searching for SPEC file in /workspace/SPECS..."
 
-log "Downloading sources from SPEC via spectool..."
+shopt -s nullglob
+specs=(/workspace/*.spec)
+
+if (( ${#specs[@]} == 0 )); then
+  echo "❌ No SPEC file found in /workspace/" >&2
+  exit 1
+elif (( ${#specs[@]} > 1 )); then
+  echo "❌ Multiple SPEC files found. Expected exactly one." >&2
+  printf '%s\n' "${specs[@]}"
+  exit 1
+fi
+
+SPECFILE="${specs[0]}"
+log "Using SPEC file: $SPECFILE"
+
+cp -v "$SPECFILE" "$TOPDIR/SPECS/"
+
+# ---------------------------------------------------------------------------
+# 5. DOWNLOAD SOURCES VIA SPECTOOL
+# ---------------------------------------------------------------------------
+log "Downloading sources via spectool..."
+
 spectool -g -R \
-  --define "_topdir /workspace/rpmbuild" \
-  /workspace/rpmbuild/SPECS/*.spec
+  --define "_topdir $TOPDIR" \
+  "$TOPDIR/SPECS/$(basename "$SPECFILE")"
 
-log "Running rpmbuild..."
-rpmbuild \
-  --define "_topdir /workspace/rpmbuild" \
-  -ba /workspace/rpmbuild/SPECS/*.spec
+log "Downloaded sources:"
+ls -l "$TOPDIR/SOURCES"
 
 # ---------------------------------------------------------------------------
-# POST-BUILD HOOK (Projekt)
+# 6. RUN RPMBUILD
+# ---------------------------------------------------------------------------
+log "Running rpmbuild..."
+
+rpmbuild \
+  --define "_topdir $TOPDIR" \
+  -ba "$TOPDIR/SPECS/$(basename "$SPECFILE")"
+
+log "rpmbuild completed successfully."
+
+# ---------------------------------------------------------------------------
+# 7. PROJECT POST-BUILD HOOK
 # ---------------------------------------------------------------------------
 if [ -f /workspace/.github/hooks/post_build.sh ]; then
   log "Running project post_build hook..."
