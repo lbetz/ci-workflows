@@ -36,17 +36,27 @@ jobs:
           ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
 
+      - name: Debug list ci-workflows
+        run: |
+          echo "PWD: $PWD"
+          echo "Listing workspace root:"
+          ls -la
+          echo "Listing .ci-workflows:"
+          ls -Rla .ci-workflows || true
+
       - name: Map arch to platform
         id: platform
         run: |
           set -euo pipefail
-          case "${{ matrix.arch }}" in
-            x86_64)  echo "platform=linux/amd64"   >> "$GITHUB_OUTPUT" ;;
-            aarch64) echo "platform=linux/arm64"   >> "$GITHUB_OUTPUT" ;;
-            ppc64le) echo "platform=linux/ppc64le" >> "$GITHUB_OUTPUT" ;;
-            s390x)   echo "platform=linux/s390x"   >> "$GITHUB_OUTPUT" ;;
-            *) echo "Unsupported arch"; exit 1 ;;
-          esac
+          # source the helper from the checked-out ci-workflows
+          source .ci-workflows/hooks/lib/platforms.sh
+
+          if platform=$(map_arch_to_platform "${{ matrix.arch }}"); then
+            echo "platform=$platform" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported arch: ${{ matrix.arch }}" >&2
+            exit 1
+          fi
 
       - name: Setup QEMU
         if: steps.platform.outputs.platform != 'linux/amd64'
@@ -146,13 +156,15 @@ jobs:
         id: platform
         run: |
           set -euo pipefail
-          case "${{ matrix.arch }}" in
-            x86_64)  echo "platform=linux/amd64"   >> "$GITHUB_OUTPUT" ;;
-            aarch64) echo "platform=linux/arm64"   >> "$GITHUB_OUTPUT" ;;
-            ppc64le) echo "platform=linux/ppc64le" >> "$GITHUB_OUTPUT" ;;
-            s390x)   echo "platform=linux/s390x"   >> "$GITHUB_OUTPUT" ;;
-            *) echo "Unsupported arch"; exit 1 ;;
-          esac
+          # source the helper from the checked-out ci-workflows
+          source .ci-workflows/hooks/lib/platforms.sh
+
+          if platform=$(map_arch_to_platform "${{ matrix.arch }}"); then
+            echo "platform=$platform" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported arch: ${{ matrix.arch }}" >&2
+            exit 1
+          fi
 
       - name: Setup QEMU
         if: steps.platform.outputs.platform != 'linux/amd64'
