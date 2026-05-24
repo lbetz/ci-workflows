@@ -87,21 +87,21 @@ jobs:
           DISTRO="${{ matrix.distro }}"
 
           # Binär-RPMs
-          for f in rpmbuild/RPMS/**/*.rpm; do
+          find rpmbuild/RPMS -type f -name '*.rpm' -print0 | while IFS= read -r -d '' f; do
             base=$(basename "$f")
             new="${base%.rpm}.${DISTRO}.rpm"
             cp -v "$f" "out/bin/$new"
           done
 
           # Source-RPMs
-          for f in rpmbuild/SRPMS/*.src.rpm; do
+          find rpmbuild/SRPMS -type f -name '*.src.rpm' -print0 | while IFS= read -r -d '' f; do
             base=$(basename "$f")
             new="${base%.src.rpm}.${DISTRO}.src.rpm"
             cp -v "$f" "out/src/$new"
           done
 
-          ls -la out/bin
-          ls -la out/src
+          ls -la out/bin || true
+          ls -la out/src || true
 
       - name: Upload binary RPMs
         uses: actions/upload-artifact@v4
