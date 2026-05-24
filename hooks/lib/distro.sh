@@ -33,3 +33,19 @@ is_suse()    { [[ "$ID" == opensuse* ]] || [[ "$ID_LIKE" == *"suse"* ]]; }
 is_alpine()  { [[ "$ID" == "alpine" ]]; }
 is_arch()    { [[ "$ID" == "arch" ]] || [[ "$ID_LIKE" == *"arch"* ]]; }
 
+is_rpm_based() {
+  is_el || is_fedora || is_suse
+}
+
+is_deb_based() {
+  is_debian || is_ubuntu
+}
+
+# Export für Hooks
+if is_rpm_based; then
+  PACKAGE_FORMAT="rpm"
+elif is_deb_based; then
+  PACKAGE_FORMAT="deb"
+else
+  PACKAGE_FORMAT="unknown"
+fi

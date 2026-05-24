@@ -9,7 +9,10 @@ log "Preparing runner for build..."
 
 if is_debian || is_ubuntu; then
   sudo apt-get update -y
-  sudo apt-get install -y --no-install-recommends rpm createrepo-c
+  sudo apt-get install -y --no-install-recommends \
+    rpm \
+    createrepo-c \
+    ca-certificates
 fi
 
 chmod +x "$(dirname "${BASH_SOURCE[0]}")"/*.sh        2>/dev/null || true

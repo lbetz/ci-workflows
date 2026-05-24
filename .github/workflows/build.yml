@@ -1,4 +1,4 @@
-name: Build RPM (Reusable)
+name: Package Build (Reusable)
 
 on:
   workflow_call:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-rpm-${{ github.workflow }}-${{ github.ref }}
+  group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -73,7 +73,7 @@ jobs:
           source .ci-workflows/hooks/lib/container_images.sh
           echo "image=$(get_container_image '${{ matrix.distro }}')" >> "$GITHUB_OUTPUT"
 
-      - name: Build RPM in container
+      - name: Build package in container
         env:
           CONTAINER_IMAGE: ${{ steps.image.outputs.image }}
           PLATFORM:        ${{ steps.platform.outputs.platform }}
@@ -87,7 +87,7 @@ jobs:
             -v "$GITHUB_WORKSPACE":/workspace \
             -w /workspace \
             "$CONTAINER_IMAGE" \
-            /bin/bash /workspace/.ci-workflows/hooks/rpmbuild_in_container.sh
+            /bin/bash /workspace/.ci-workflows/hooks/build_in_container.sh
 
       - name: Collect & rename artifacts
         run: |
@@ -96,35 +96,62 @@ jobs:
 
           DISTRO="${{ matrix.distro }}"
 
-          # Binär-RPMs
-          find rpmbuild/RPMS -type f -name '*.rpm' -print0 | while IFS= read -r -d '' f; do
-            base=$(basename "$f")
-            new="${base%.rpm}.${DISTRO}.rpm"
-            cp -v "$f" "out/bin/$new"
-          done
+          # Detect package format
+          if [[ -d rpmbuild/RPMS ]]; then
+            FORMAT="rpm"
+          elif ls ./*.deb >/dev/null 2>&1; then
+            FORMAT="deb"
+          else
+            echo "❌ No RPM or DEB artifacts found" >&2
+            exit 1
+          fi
 
-          # Source-RPMs
-          find rpmbuild/SRPMS -type f -name '*.src.rpm' -print0 | while IFS= read -r -d '' f; do
-            base=$(basename "$f")
-            new="${base%.src.rpm}.${DISTRO}.src.rpm"
-            cp -v "$f" "out/src/$new"
-          done
+          echo "Detected package format: $FORMAT"
+
+          if [[ "$FORMAT" == "rpm" ]]; then
+            # Binär-RPMs
+            find rpmbuild/RPMS -type f -name '*.rpm' -print0 | while IFS= read -r -d '' f; do
+              base=$(basename "$f")
+              new="${base%.rpm}.${DISTRO}.rpm"
+              cp -v "$f" "out/bin/$new"
+            done
+  
+            # Source-RPMs
+            find rpmbuild/SRPMS -type f -name '*.src.rpm' -print0 | while IFS= read -r -d '' f; do
+              base=$(basename "$f")
+              new="${base%.src.rpm}.${DISTRO}.src.rpm"
+              cp -v "$f" "out/src/$new"
+            done
+          else
+            # DEB packages
+            for f in ./*.deb; do
+              base=$(basename "$f")
+              new="${base%.deb}.${DISTRO}.deb"
+              cp -v "$f" "out/bin/$new"
+            done
+            
+            # Source packages (.dsc, .orig.tar.xz, .debian.tar.xz)
+            for f in ./*.dsc ./*.orig.tar.* ./*.debian.tar.*; do
+              [ -e "$f" ] || continue
+              cp -v "$f" "out/src/"
+            done
+          fi
 
           ls -la out/bin || true
           ls -la out/src || true
 
-      - name: Upload binary RPMs
+      - name: Upload binary packages
         uses: actions/upload-artifact@v4
         with:
-          name: rpm-bin-${{ matrix.distro }}-${{ matrix.arch }}
-          path: out/bin/*.rpm
+          name: bin-${{ matrix.distro }}-${{ matrix.arch }}
+          path: out/bin/*
           if-no-files-found: error
 
-      - name: Upload source RPMs
+      - name: Upload source packages
         uses: actions/upload-artifact@v4
         with:
-          name: rpm-src-${{ matrix.distro }}-${{ matrix.arch }}
-          path: out/src/*.rpm
+          name: src-${{ matrix.distro }}-${{ matrix.arch }}
+          path: out/src/*
           if-no-files-found: error
 
   test:
@@ -146,11 +173,19 @@ jobs:
           ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
 
-      - name: Download binary RPMs
+      # ---------------------------------------------------------------
+      # Download binary packages (RPM or DEB)
+      # ---------------------------------------------------------------
+      - name: Download binary packages
         uses: actions/download-artifact@v4
         with:
-          name: rpm-bin-${{ matrix.distro }}-${{ matrix.arch }}
-          path: rpms
+          name: bin-${{ matrix.distro }}-${{ matrix.arch }}
+          path: pkgs
+
+      - name: List downloaded packages
+        run: |
+          echo "Downloaded packages:"
+          ls -l pkgs || true
 
       - name: Map arch to platform
         id: platform
@@ -181,15 +216,31 @@ jobs:
           source .ci-workflows/hooks/lib/container_images.sh
           echo "image=$(get_container_image '${{ matrix.distro }}')" >> "$GITHUB_OUTPUT"
 
-      - name: Install & test RPM in container
+      - name: Install & test package in container
         env:
           CONTAINER_IMAGE: ${{ steps.image.outputs.image }}
           PLATFORM:        ${{ steps.platform.outputs.platform }}
         run: |
+          set -euo pipefail
+          # Detect format based on downloaded files
+          if ls pkgs/*.rpm >/dev/null 2>&1; then
+            FORMAT="rpm"
+          elif ls pkgs/*.deb >/dev/null 2>&1; then
+            FORMAT="deb"
+          else
+            echo "❌ No RPM or DEB packages found in pkgs/" >&2
+            exit 1
+          fi
+
+          TEST_SCRIPT="/workspace/.ci-workflows/hooks/test_in_container.sh"
+          echo "Using test script: $TEST_SCRIPT"
+
+          echo "Detected package format: $FORMAT"
+          echo "Using test script: $TEST_SCRIPT"
+
           docker run --rm \
             --platform "$PLATFORM" \
             -v "$GITHUB_WORKSPACE":/workspace \
             -w /workspace \
             "$CONTAINER_IMAGE" \
-            /bin/bash /workspace/.ci-workflows/hooks/rpmtest_in_container.sh
-
+            /bin/bash "$TEST_SCRIPT"

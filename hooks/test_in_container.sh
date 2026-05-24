@@ -5,7 +5,7 @@ trap 'echo "[ERROR] Test failed at line $LINENO" >&2' ERR
 source /workspace/.ci-workflows/hooks/lib/distro.sh
 source /workspace/.ci-workflows/hooks/lib/common.sh || true
 
-log "Starting rpm test in container – distro: $ID ($ID_LIKE)"
+log "Starting rpm test in container – distro: $ID ($ID_LIKE), format: $PACKAGE_FORMAT"
 
 # ---------------------------------------------------------------------------
 # 1. GLOBAL PRE-TEST HOOK
@@ -24,39 +24,83 @@ if [ -f /workspace/.github/hooks/pre_test.sh ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 3. INSTALL BUILT RPMs
+# 3. DETECT PACKAGE FORMAT
 # ---------------------------------------------------------------------------
+PKG_DIR="/workspace/pkgs"
+
+if ls "$PKG_DIR"/*.rpm >/dev/null 2>&1; then
+  PACKAGE_FORMAT="rpm"
+elif ls "$PKG_DIR"/*.deb >/dev/null 2>&1; then
+  PACKAGE_FORMAT="deb"
+else
+  echo "❌ No RPM or DEB packages found in $PKG_DIR" >&2
+  exit 1
+fi
+
+log "Detected package format: $PACKAGE_FORMAT"
+
+# ---------------------------------------------------------------------------
+# 4. INSTALL PACKAGE
+# ---------------------------------------------------------------------------
+if [[ "$PACKAGE_FORMAT" == "rpm" ]]; then
 log "Installing built RPMs..."
 
-RPM_DIR="/workspace/rpms"
+  case "$ID" in
+    rhel|centos|almalinux|rocky|fedora)
+      BINARIES=()
+      for pkg in "$PKG_DIR"/*.rpm; do
+        case "$pkg" in
+          *.src.rpm) continue ;;   # SRPM überspringen
+          *) BINARIES+=("$pkg") ;;
+        esac
+      done
+      
+      if (( ${#BINARIES[@]} == 0 )); then
+        echo "❌ No binary RPMs found in $RPM_DIR" >&2
+        exit 1
+      fi
+      
+      if ! dnf install -y "${BINARIES[@]}"; then
+        echo "❌ RPM installation failed – missing dependencies?" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      echo "❌ Unsupported distro for RPM testing: $ID" >&2
+      exit 1
+      ;;
+  esac
+  
+  log "RPM installation successful."
+fi
 
-case "$ID" in
-  rhel|centos|almalinux|rocky|fedora)
-    BINARIES=()
-    for pkg in "$RPM_DIR"/*.rpm; do
-      case "$pkg" in
-        *.src.rpm) continue ;;   # SRPM überspringen
-        *) BINARIES+=("$pkg") ;;
-      esac
-    done
-    
-    if (( ${#BINARIES[@]} == 0 )); then
-      echo "❌ No binary RPMs found in $RPM_DIR" >&2
-      exit 1
-    fi
-    
-    if ! dnf install -y "${BINARIES[@]}"; then
-      echo "❌ RPM installation failed – missing dependencies?" >&2
-      exit 1
-    fi
-    ;;
-  *)
-    echo "❌ Unsupported distro for RPM testing: $ID" >&2
+if [[ "$PACKAGE_FORMAT" == "deb" ]]; then
+  log "Installing DEB packages..."
+
+  DEBS=()
+  for pkg in "$PKG_DIR"/*.deb; do
+    [[ -e "$pkg" ]] || continue
+    DEBS+=("$pkg")
+  done
+
+  if (( ${#DEBS[@]} == 0 )); then
+    echo "❌ No DEB packages found in $PKG_DIR" >&2
     exit 1
-    ;;
-esac
+  fi
 
-log "RPM installation successful."
+  case "$ID" in
+    debian|ubuntu)
+      apt-get update
+      apt-get install -y "${DEBS[@]}"
+      ;;
+    *)
+      echo "❌ Unsupported distro for DEB testing: $ID" >&2
+      exit 1
+      ;;
+  esac
+
+  log "DEB installation successful."
+fi
 
 # ---------------------------------------------------------------------------
 # 4. SMOKE TESTS
