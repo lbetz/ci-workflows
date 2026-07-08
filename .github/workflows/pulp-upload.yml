@@ -59,6 +59,19 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "pulp-cli[deb,rpm]"
 
+      - name: Configure pulp-cli
+        env:
+          PULP_URL: ${{ secrets.PULP_URL }}
+          PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+          PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          pulp config create \
+            --overwrite \
+            --base-url "${PULP_URL}" \
+            --username "${PULP_USERNAME}" \
+            --password "${PULP_PASSWORD}"
+
       - name: Bootstrap repositories/distributions
         env:
           PULP_URL: ${{ secrets.PULP_URL }}
