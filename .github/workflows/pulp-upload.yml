@@ -1,0 +1,114 @@
+name: Pulp Upload (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      ci_workflows_ref:
+        type: string
+        default: "main"
+      rpm_artifact_pattern:
+        type: string
+        default: "bin-*"
+      deb_artifact_pattern:
+        type: string
+        default: "bin-*"
+      rpm_repository:
+        type: string
+        default: "ci-rpm"
+      deb_repository:
+        type: string
+        default: "ci-deb"
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout ci-workflows
+        uses: actions/checkout@v4
+        with:
+          repository: lbetz/ci-workflows
+          ref: ${{ inputs.ci_workflows_ref }}
+          path: .ci-workflows
+
+      - name: Download RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.rpm_artifact_pattern }}
+          path: dist/rpm
+          merge-multiple: true
+
+      - name: Download DEB artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.deb_artifact_pattern }}
+          path: dist/deb
+          merge-multiple: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install "pulp-cli[deb,rpm]"
+
+      - name: Bootstrap repositories/distributions
+        env:
+          PULP_URL: ${{ secrets.PULP_URL }}
+          PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+          PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+          RPM_REPOSITORY: ${{ inputs.rpm_repository }}
+          DEB_REPOSITORY: ${{ inputs.deb_repository }}
+        run: |
+          set -euo pipefail
+          bash .ci-workflows/scripts/pulp-bootstrap.sh
+
+      - name: Upload RPM packages
+        env:
+          PULP_CLI_BASE_URL: ${{ secrets.PULP_URL }}
+          PULP_CLI_USERNAME: ${{ secrets.PULP_USERNAME }}
+          PULP_CLI_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+          RPM_REPOSITORY: ${{ inputs.rpm_repository }}
+        run: |
+          set -euo pipefail
+          RPM_COUNT=$(find dist/rpm -type f -name '*.rpm' | wc -l | tr -d ' ')
+          if [[ "${RPM_COUNT}" == "0" ]]; then
+            echo "No RPM files found in dist/rpm"
+          else
+            pulp rpm content -t package upload \
+              --directory dist/rpm \
+              --repository "${RPM_REPOSITORY}" \
+              --use-temp-repository
+          fi
+
+      - name: Upload DEB packages
+        env:
+          PULP_CLI_BASE_URL: ${{ secrets.PULP_URL }}
+          PULP_CLI_USERNAME: ${{ secrets.PULP_USERNAME }}
+          PULP_CLI_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+          DEB_REPOSITORY: ${{ inputs.deb_repository }}
+        run: |
+          set -euo pipefail
+          mapfile -t DEBS < <(find dist/deb -type f -name '*.deb')
+          if [[ "${#DEBS[@]}" -eq 0 ]]; then
+            echo "No DEB files found in dist/deb"
+          else
+            for pkg in "${DEBS[@]}"; do
+              pulp deb content upload --repository "${DEB_REPOSITORY}" --file "${pkg}"
+            done
+          fi
+
+      - name: Show content endpoints
+        env:
+          PULP_URL: ${{ secrets.PULP_URL }}
+        run: |
+          set -euo pipefail
+          echo "RPM: ${PULP_URL%/}/pulp/content/${{ inputs.rpm_repository }}/"
+          echo "DEB: ${PULP_URL%/}/pulp/content/${{ inputs.deb_repository }}/"

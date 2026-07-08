@@ -14,6 +14,8 @@ Ein zentrales Repository mit wiederverwendbaren GitHub Actions Workflows, Hooks 
 - Hook-System für projektbezogene Anpassungen
 - Automatische Artefakt-Benennung mit Distro-Suffix
 - Smoke-Tests im Container
+- Wiederverwendbarer Pulp-Upload-Workflow für Tag-Releases
+- Wiederverwendbarer Package-Orchestrierungsworkflow für Build, Test und Upload
 
 ## 📁 Repository-Struktur
 
@@ -21,7 +23,9 @@ Ein zentrales Repository mit wiederverwendbaren GitHub Actions Workflows, Hooks 
 ci-workflows/
 │
 ├── .github/workflows/
-│   └── build-rpm.yml          # Reusable Workflow
+│   ├── build.yml              # Reusable Build/Test Workflow
+│   ├── package.yml            # Reusable Package Orchestration Workflow
+│   └── pulp-upload.yml        # Reusable Pulp Upload Workflow
 │
 └── hooks/
 ├── pre_build_in_runner.sh
@@ -34,6 +38,9 @@ ci-workflows/
 ├── common.sh
 ├── distro.sh
 └── container_images.sh
+
+└── scripts/
+  └── pulp-bootstrap.sh
 ```
 
 
@@ -41,11 +48,18 @@ ci-workflows/
 
 ```yaml
 jobs:
-  build:
-    uses: lbetz/ci-workflows/.github/workflows/build-rpm.yml@main
+  package:
+    uses: lbetz/ci-workflows/.github/workflows/package.yml@main
     with:
-      distros: '["almalinux9"]'
-      architectures: '["x86_64", "aarch64"]'
+      ci_workflows_ref: "main"
+      source_event_name: "workflow_dispatch"
+      source_ref_name: "main"
+      source_ref_type: "branch"
+      run_upload: false
+      matrix: |
+        el9: x86_64
+        debian12: x86_64
+        ubuntu24: x86_64
 ```
 
 ### 🪝 Projekt-Hooks

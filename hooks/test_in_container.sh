@@ -54,12 +54,12 @@ log "Installing built RPMs..."
           *) BINARIES+=("$pkg") ;;
         esac
       done
-      
+
       if (( ${#BINARIES[@]} == 0 )); then
         echo "❌ No binary RPMs found in $PKG_DIR" >&2
         exit 1
       fi
-      
+
       if ! dnf install -y "${BINARIES[@]}"; then
         echo "❌ RPM installation failed – missing dependencies?" >&2
         exit 1
@@ -70,7 +70,7 @@ log "Installing built RPMs..."
       exit 1
       ;;
   esac
-  
+
   log "RPM installation successful."
 fi
 
@@ -121,4 +121,3 @@ if [ -f /workspace/.github/hooks/post_test.sh ]; then
 fi
 
 log "Test container script finished."
-

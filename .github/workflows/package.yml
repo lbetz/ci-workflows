@@ -1,0 +1,137 @@
+name: Package Pipeline (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      ci_workflows_ref:
+        type: string
+        default: "main"
+      matrix:
+        type: string
+        required: true
+      source_event_name:
+        type: string
+        default: ""
+      source_ref_name:
+        type: string
+        default: ""
+      source_ref_type:
+        type: string
+        default: ""
+      run_upload:
+        type: boolean
+        default: false
+      rpm_repository:
+        type: string
+        default: "ci-rpm"
+      deb_repository:
+        type: string
+        default: "ci-deb"
+      rpm_artifact_pattern:
+        type: string
+        default: "bin-*"
+      deb_artifact_pattern:
+        type: string
+        default: "bin-*"
+
+permissions:
+  contents: read
+
+jobs:
+  tag-gate:
+    runs-on: ubuntu-latest
+
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+      upload: ${{ steps.check.outputs.upload }}
+
+    steps:
+      - name: Validate event and tag pattern
+        id: check
+        shell: bash
+        env:
+          EVENT_NAME: ${{ inputs.source_event_name != '' && inputs.source_event_name || github.event_name }}
+          REF_NAME: ${{ inputs.source_ref_name != '' && inputs.source_ref_name || github.ref_name }}
+          REF_TYPE: ${{ inputs.source_ref_type != '' && inputs.source_ref_type || github.ref_type }}
+          RUN_UPLOAD: ${{ inputs.run_upload }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            if [[ "$RUN_UPLOAD" == "true" ]]; then
+              echo "upload=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "upload=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "push" && "$REF_TYPE" == "tag" ]]; then
+            if [[ "$REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+-.+$ ]]; then
+              echo "allowed=true" >> "$GITHUB_OUTPUT"
+              echo "upload=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "allowed=false" >> "$GITHUB_OUTPUT"
+              echo "upload=false" >> "$GITHUB_OUTPUT"
+              echo "Tag $REF_NAME does not match <semver>-<text>" >&2
+            fi
+            exit 0
+          fi
+
+          echo "allowed=true" >> "$GITHUB_OUTPUT"
+          echo "upload=false" >> "$GITHUB_OUTPUT"
+
+  expand-matrix:
+    needs: tag-gate
+    if: needs.tag-gate.outputs.allowed == 'true'
+    runs-on: ubuntu-latest
+
+    outputs:
+      matrix: ${{ steps.expand.outputs.matrix }}
+
+    steps:
+      - name: Expand compact matrix
+        id: expand
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 << 'EOF'
+          import json
+          import os
+          import yaml
+
+          raw_yaml = """${{ inputs.matrix }}"""
+          raw = yaml.safe_load(raw_yaml)
+          expanded = {"include": []}
+
+          for distro, archs in raw.items():
+              if isinstance(archs, str):
+                  archs = [archs]
+              for arch in archs:
+                  expanded["include"].append({"distro": distro, "arch": arch})
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"matrix={json.dumps(expanded)}\n")
+          EOF
+
+  build:
+    needs: [tag-gate, expand-matrix]
+    if: needs.tag-gate.outputs.allowed == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
+      matrix: ${{ needs.expand-matrix.outputs.matrix }}
+
+  upload:
+    needs: [tag-gate, build]
+    if: needs.tag-gate.outputs.allowed == 'true' && needs.tag-gate.outputs.upload == 'true'
+    uses: ./.github/workflows/pulp-upload.yml
+    with:
+      ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
+      rpm_artifact_pattern: ${{ inputs.rpm_artifact_pattern }}
+      deb_artifact_pattern: ${{ inputs.deb_artifact_pattern }}
+      rpm_repository: ${{ inputs.rpm_repository }}
+      deb_repository: ${{ inputs.deb_repository }}
+    secrets: inherit

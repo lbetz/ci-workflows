@@ -20,4 +20,3 @@ get_container_image() {
       ;;
   esac
 }
-
