@@ -56,7 +56,7 @@ log "Installing built RPMs..."
       done
       
       if (( ${#BINARIES[@]} == 0 )); then
-        echo "❌ No binary RPMs found in $RPM_DIR" >&2
+        echo "❌ No binary RPMs found in $PKG_DIR" >&2
         exit 1
       fi
       

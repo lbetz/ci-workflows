@@ -14,7 +14,10 @@ get_container_image() {
     debian13) echo "debian:13" ;;
     ubuntu22) echo "ubuntu:22.04" ;;
     ubuntu24) echo "ubuntu:24.04" ;;
-    *)        echo "debian:13" ;;
+    *)
+      echo "Unsupported distro key for container image mapping: $distro" >&2
+      return 1
+      ;;
   esac
 }
 
