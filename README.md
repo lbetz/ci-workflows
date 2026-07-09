@@ -16,6 +16,7 @@ Ein zentrales Repository mit wiederverwendbaren GitHub Actions Workflows, Hooks 
 - Smoke-Tests im Container
 - Wiederverwendbarer Pulp-Upload-Workflow für Tag-Releases
 - Wiederverwendbarer Package-Orchestrierungsworkflow für Build, Test und Upload
+- Optionale zentrale Paket-Signierung vor dem Upload
 
 ## 📁 Repository-Struktur
 
@@ -61,6 +62,23 @@ jobs:
         debian12: x86_64
         ubuntu24: x86_64
 ```
+
+Standardverhalten: `sign_packages` ist per Default `true`.
+Nur bei Bedarf abschalten mit:
+
+```yaml
+sign_packages: false
+```
+
+### 🔐 Signierung
+
+Die zentrale Pipeline signiert RPM- und DEB-Pakete standardmaessig vor dem Upload.
+
+Benötigte Secrets im aufrufenden Package-Repo:
+
+- `PACKAGE_SIGNING_PRIVATE_KEY` (ASCII-armored private key)
+- `PACKAGE_SIGNING_KEY_ID`
+- `PACKAGE_SIGNING_PASSPHRASE`
 
 ### 🪝 Projekt-Hooks
 

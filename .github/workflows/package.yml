@@ -21,6 +21,9 @@ on:
       run_upload:
         type: boolean
         default: false
+      sign_packages:
+        type: boolean
+        default: true
       rpm_repository:
         type: string
         default: "ci-rpm"
@@ -124,14 +127,107 @@ jobs:
       ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
       matrix: ${{ needs.expand-matrix.outputs.matrix }}
 
-  upload:
+  sign:
     needs: [tag-gate, build]
-    if: needs.tag-gate.outputs.allowed == 'true' && needs.tag-gate.outputs.upload == 'true'
+    if: needs.tag-gate.outputs.allowed == 'true' && needs.tag-gate.outputs.upload == 'true' && inputs.sign_packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts to sign
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.rpm_artifact_pattern }}
+          path: dist/unsigned
+          merge-multiple: true
+
+      - name: Download DEB artifacts to sign
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.deb_artifact_pattern }}
+          path: dist/unsigned
+          merge-multiple: true
+
+      - name: Install signing tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm gnupg dpkg-sig
+
+      - name: Import signing key
+        env:
+          PACKAGE_SIGNING_PRIVATE_KEY: ${{ secrets.PACKAGE_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          : "${PACKAGE_SIGNING_PRIVATE_KEY:?PACKAGE_SIGNING_PRIVATE_KEY secret is required when sign_packages=true}"
+          printf '%s\n' "$PACKAGE_SIGNING_PRIVATE_KEY" > signing.key.asc
+          gpg --batch --import signing.key.asc
+
+      - name: Sign RPM packages
+        env:
+          PACKAGE_SIGNING_KEY_ID: ${{ secrets.PACKAGE_SIGNING_KEY_ID }}
+          PACKAGE_SIGNING_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          : "${PACKAGE_SIGNING_KEY_ID:?PACKAGE_SIGNING_KEY_ID secret is required when sign_packages=true}"
+          : "${PACKAGE_SIGNING_PASSPHRASE:?PACKAGE_SIGNING_PASSPHRASE secret is required when sign_packages=true}"
+
+          {
+            printf '%%_signature gpg\n'
+            printf '%%_gpg_name %s\n' "${PACKAGE_SIGNING_KEY_ID}"
+            printf '%%__gpg /usr/bin/gpg\n'
+            printf "%%__gpg_sign_cmd %%{__gpg} gpg --batch --yes --no-armor --pinentry-mode loopback --passphrase '%s' --digest-algo sha256 --detach-sign --output %%{__signature_filename} %%{__plaintext_filename}\\n" "${PACKAGE_SIGNING_PASSPHRASE}"
+          } > ~/.rpmmacros
+
+          shopt -s nullglob
+          rpms=(dist/unsigned/*.rpm)
+          if (( ${#rpms[@]} > 0 )); then
+            for pkg in "${rpms[@]}"; do
+              rpmsign --addsign "$pkg"
+            done
+          fi
+
+      - name: Sign DEB packages
+        env:
+          PACKAGE_SIGNING_KEY_ID: ${{ secrets.PACKAGE_SIGNING_KEY_ID }}
+          PACKAGE_SIGNING_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          : "${PACKAGE_SIGNING_KEY_ID:?PACKAGE_SIGNING_KEY_ID secret is required when sign_packages=true}"
+          : "${PACKAGE_SIGNING_PASSPHRASE:?PACKAGE_SIGNING_PASSPHRASE secret is required when sign_packages=true}"
+
+          shopt -s nullglob
+          debs=(dist/unsigned/*.deb)
+          if (( ${#debs[@]} > 0 )); then
+            export DEBSIGN_PROGRAM="gpg --batch --yes --pinentry-mode loopback --passphrase ${PACKAGE_SIGNING_PASSPHRASE}"
+            for pkg in "${debs[@]}"; do
+              dpkg-sig -k "${PACKAGE_SIGNING_KEY_ID}" --sign builder "$pkg"
+            done
+          fi
+
+      - name: Collect signed artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p out/bin
+          shopt -s nullglob
+          for f in dist/unsigned/*.rpm dist/unsigned/*.deb; do
+            cp -v "$f" out/bin/
+          done
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-bin-packages
+          path: out/bin/*
+          if-no-files-found: error
+
+  upload:
+    needs: [tag-gate, build, sign]
+    if: always() && needs.tag-gate.outputs.allowed == 'true' && needs.tag-gate.outputs.upload == 'true' && (!inputs.sign_packages || needs.sign.result == 'success')
     uses: ./.github/workflows/pulp-upload.yml
     with:
       ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
-      rpm_artifact_pattern: ${{ inputs.rpm_artifact_pattern }}
-      deb_artifact_pattern: ${{ inputs.deb_artifact_pattern }}
+      rpm_artifact_pattern: ${{ inputs.sign_packages && 'signed-bin-packages' || inputs.rpm_artifact_pattern }}
+      deb_artifact_pattern: ${{ inputs.sign_packages && 'signed-bin-packages' || inputs.deb_artifact_pattern }}
       rpm_repository: ${{ inputs.rpm_repository }}
       deb_repository: ${{ inputs.deb_repository }}
     secrets: inherit
