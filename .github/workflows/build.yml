@@ -9,6 +9,9 @@ on:
       matrix:
         type: string
         required: true
+      runner_labels:
+        type: string
+        default: '["ubuntu-latest"]'
 
 permissions:
   contents: read
@@ -19,7 +22,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     strategy:
       fail-fast: false
@@ -115,7 +118,7 @@ jobs:
               new="${base%.rpm}.${DISTRO}.rpm"
               cp -v "$f" "out/bin/$new"
             done
-  
+
             # Source-RPMs
             find rpmbuild/SRPMS -type f -name '*.src.rpm' -print0 | while IFS= read -r -d '' f; do
               base=$(basename "$f")
@@ -129,7 +132,7 @@ jobs:
               new="${base%.deb}.${DISTRO}.deb"
               cp -v "$f" "out/bin/$new"
             done
-            
+
             # Source packages (.dsc, .orig.tar.xz, .debian.tar.xz)
             for f in ./*.dsc ./*.orig.tar.* ./*.debian.tar.*; do
               [ -e "$f" ] || continue
@@ -156,7 +159,7 @@ jobs:
 
   test:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     strategy:
       fail-fast: false

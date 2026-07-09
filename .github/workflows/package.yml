@@ -30,6 +30,9 @@ on:
       deb_repository:
         type: string
         default: "ci-deb"
+      runner_labels:
+        type: string
+        default: '["ubuntu-latest"]'
       rpm_artifact_pattern:
         type: string
         default: "bin-*"
@@ -42,7 +45,7 @@ permissions:
 
 jobs:
   tag-gate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
@@ -88,7 +91,7 @@ jobs:
   expand-matrix:
     needs: tag-gate
     if: needs.tag-gate.outputs.allowed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     outputs:
       matrix: ${{ steps.expand.outputs.matrix }}
@@ -126,11 +129,12 @@ jobs:
     with:
       ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
       matrix: ${{ needs.expand-matrix.outputs.matrix }}
+      runner_labels: ${{ inputs.runner_labels }}
 
   sign:
     needs: [tag-gate, build]
     if: needs.tag-gate.outputs.allowed == 'true' && needs.tag-gate.outputs.upload == 'true' && inputs.sign_packages
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     steps:
       - name: Download artifacts to sign
@@ -241,6 +245,7 @@ jobs:
     uses: ./.github/workflows/pulp-upload.yml
     with:
       ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
+      runner_labels: ${{ inputs.runner_labels }}
       rpm_artifact_pattern: ${{ inputs.sign_packages && 'signed-bin-packages' || inputs.rpm_artifact_pattern }}
       deb_artifact_pattern: ${{ inputs.sign_packages && 'signed-bin-packages' || inputs.deb_artifact_pattern }}
       rpm_repository: ${{ inputs.rpm_repository }}

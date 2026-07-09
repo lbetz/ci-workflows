@@ -6,6 +6,9 @@ on:
       ci_workflows_ref:
         type: string
         default: "main"
+      runner_labels:
+        type: string
+        default: '["ubuntu-latest"]'
       rpm_artifact_pattern:
         type: string
         default: "bin-*"
@@ -24,7 +27,7 @@ permissions:
 
 jobs:
   upload:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     steps:
       - name: Checkout ci-workflows
