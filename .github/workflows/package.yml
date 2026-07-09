@@ -151,7 +151,13 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rpm gnupg dpkg-sig
+          sudo apt-get install -y --no-install-recommends rpm gnupg
+
+          # Ubuntu images can differ: try dpkg-sig first, then fall back to debsigs.
+          if ! sudo apt-get install -y --no-install-recommends dpkg-sig; then
+            echo "dpkg-sig not available on this runner image, trying debsigs..."
+            sudo apt-get install -y --no-install-recommends debsigs
+          fi
 
       - name: Import signing key
         env:
@@ -198,10 +204,19 @@ jobs:
           shopt -s nullglob
           debs=(dist/unsigned/*.deb)
           if (( ${#debs[@]} > 0 )); then
-            export DEBSIGN_PROGRAM="gpg --batch --yes --pinentry-mode loopback --passphrase ${PACKAGE_SIGNING_PASSPHRASE}"
-            for pkg in "${debs[@]}"; do
-              dpkg-sig -k "${PACKAGE_SIGNING_KEY_ID}" --sign builder "$pkg"
-            done
+            if command -v dpkg-sig >/dev/null 2>&1; then
+              export DEBSIGN_PROGRAM="gpg --batch --yes --pinentry-mode loopback --passphrase ${PACKAGE_SIGNING_PASSPHRASE}"
+              for pkg in "${debs[@]}"; do
+                dpkg-sig -k "${PACKAGE_SIGNING_KEY_ID}" --sign builder "$pkg"
+              done
+            elif command -v debsigs >/dev/null 2>&1; then
+              for pkg in "${debs[@]}"; do
+                debsigs --sign=origin --default-key "${PACKAGE_SIGNING_KEY_ID}" "$pkg"
+              done
+            else
+              echo "No DEB signing tool available (dpkg-sig/debsigs)" >&2
+              exit 1
+            fi
           fi
 
       - name: Collect signed artifacts
