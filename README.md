@@ -63,12 +63,45 @@ jobs:
         ubuntu24: x86_64
 ```
 
+Mehrere Architekturen pro Distribution werden ebenfalls unterstuetzt:
+
+```yaml
+matrix: |
+  el9:
+    - x86_64
+    - aarch64
+  ubuntu24: [x86_64, arm64]
+```
+
+Alternativ kann `matrix` auch als JSON-Mapping uebergeben werden:
+
+```yaml
+matrix: '{"el9": ["x86_64", "aarch64"], "ubuntu24": "x86_64"}'
+```
+
 Standardverhalten: `sign_packages` ist per Default `true`.
 Nur bei Bedarf abschalten mit:
 
 ```yaml
 sign_packages: false
 ```
+
+### Self-Hosted Runner Voraussetzungen
+
+Auf einem Self-Hosted Runner werden mehrere Tools und Rechte vorausgesetzt, die auf `ubuntu-latest` bereits vorhanden sind, im Homelab aber haeufig fehlen:
+
+- Build und Test benoetigen eine funktionierende Docker-Installation inklusive laufendem Daemon.
+- Multi-Arch Builds und Tests (`aarch64`, `ppc64le`, `s390x`) benoetigen zusaetzlich QEMU bzw. `binfmt_misc`, damit `docker/setup-qemu-action` Container fuer Fremdarchitekturen registrieren kann.
+- Die Runner-Hooks und der Signing-Job installieren Pakete per `apt-get`, daher ist der aktuelle Workflow fuer Debian-/Ubuntu-basierte Runner mit `apt-get` ausgelegt.
+- Fuer diese Paketinstallation wird `sudo` oder ein Runner mit Root-Rechten benoetigt.
+- Der Signing-Job benoetigt ausserdem `gnupg`, `rpm` und fuer DEB-Signaturen `dpkg-sig` oder `debsigs`; der Workflow installiert diese Pakete aktuell selbst.
+- Der Upload-Job richtet Python ueber `actions/setup-python` ein und installiert `pulp-cli` per `pip`; dafuer braucht der Runner Netzwerkzugriff auf GitHub/PyPI.
+
+Diese Voraussetzungen werden jetzt vor den eigentlichen Build-, Sign- und Upload-Schritten per Preflight geprueft, damit ein Self-Hosted Runner frueh mit einer klaren Fehlermeldung abbricht.
+
+Fuer Ubuntu/Debian gibt es ausserdem ein Bootstrap-Skript in [scripts/prepare-selfhosted-runner.sh](scripts/prepare-selfhosted-runner.sh), das die ueblichen Host-Voraussetzungen installiert und konfiguriert.
+
+Wenn ein Runner diese Voraussetzungen nicht erfuellt, sollte entweder ein passendes Runner-Label verwendet oder `sign_packages: false` gesetzt werden.
 
 ### 🔐 Signierung
 

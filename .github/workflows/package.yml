@@ -102,19 +102,84 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet pyyaml
           python3 << 'EOF'
           import json
           import os
-          import yaml
+          import textwrap
 
-          raw_yaml = """${{ inputs.matrix }}"""
-          raw = yaml.safe_load(raw_yaml)
+          def parse_scalar(value: str) -> str:
+              value = value.strip()
+              if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                  return value[1:-1]
+              return value
+
+
+          def parse_inline_list(value: str) -> list[str]:
+              inner = value[1:-1].strip()
+              if not inner:
+                  return []
+              return [parse_scalar(part) for part in inner.split(",") if part.strip()]
+
+
+          def parse_simple_matrix(raw_text: str) -> dict[str, str | list[str]]:
+              parsed: dict[str, str | list[str]] = {}
+              current_key = None
+
+              for raw_line in textwrap.dedent(raw_text).splitlines():
+                  line = raw_line.rstrip()
+                  stripped = line.strip()
+                  if not stripped or stripped.startswith("#"):
+                      continue
+
+                  indent = len(raw_line) - len(raw_line.lstrip(" "))
+                  if indent == 0:
+                      if ":" not in stripped:
+                          raise ValueError(f"Unsupported matrix line: {raw_line!r}")
+
+                      key, value = stripped.split(":", 1)
+                      key = key.strip()
+                      value = value.strip()
+                      if not key:
+                          raise ValueError(f"Missing matrix key in line: {raw_line!r}")
+
+                      if not value:
+                          parsed[key] = []
+                          current_key = key
+                      elif value.startswith("[") and value.endswith("]"):
+                          parsed[key] = parse_inline_list(value)
+                          current_key = None
+                      else:
+                          parsed[key] = parse_scalar(value)
+                          current_key = None
+                      continue
+
+                  if current_key is None or not stripped.startswith("- "):
+                      raise ValueError(f"Unsupported matrix line: {raw_line!r}")
+
+                  current_value = parsed[current_key]
+                  if not isinstance(current_value, list):
+                      raise ValueError(f"Matrix key {current_key!r} does not accept list items")
+                  current_value.append(parse_scalar(stripped[2:]))
+
+              return parsed
+
+
+          raw_yaml = textwrap.dedent("""${{ inputs.matrix }}""").strip()
+          if raw_yaml.startswith("{"):
+              raw = json.loads(raw_yaml)
+          else:
+              raw = parse_simple_matrix(raw_yaml)
+
+          if not isinstance(raw, dict):
+              raise ValueError("Matrix input must be a mapping of distro names to architectures")
+
           expanded = {"include": []}
 
           for distro, archs in raw.items():
               if isinstance(archs, str):
                   archs = [archs]
+              elif not isinstance(archs, list):
+                  raise ValueError(f"Matrix value for {distro!r} must be a string or list")
               for arch in archs:
                   expanded["include"].append({"distro": distro, "arch": arch})
 
@@ -137,6 +202,20 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     steps:
+      - name: Checkout ci-workflows
+        uses: actions/checkout@v4
+        with:
+          repository: lbetz/ci-workflows
+          ref: ${{ inputs.ci_workflows_ref }}
+          path: .ci-workflows
+
+      - name: Preflight runner requirements
+        env:
+          PACKAGE_SIGNING_PRIVATE_KEY: ${{ secrets.PACKAGE_SIGNING_PRIVATE_KEY }}
+          PACKAGE_SIGNING_KEY_ID: ${{ secrets.PACKAGE_SIGNING_KEY_ID }}
+          PACKAGE_SIGNING_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
+        run: bash .ci-workflows/hooks/preflight_in_runner.sh sign
+
       - name: Download artifacts to sign
         uses: actions/download-artifact@v4
         with:

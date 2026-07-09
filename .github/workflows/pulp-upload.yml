@@ -56,6 +56,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Preflight runner requirements
+        env:
+          PULP_URL: ${{ secrets.PULP_URL }}
+          PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+          PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+        run: bash .ci-workflows/hooks/preflight_in_runner.sh upload
+
       - name: Install tooling
         run: |
           set -euo pipefail

@@ -39,6 +39,9 @@ jobs:
           ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
 
+      - name: Preflight runner requirements
+        run: bash .ci-workflows/hooks/preflight_in_runner.sh build "${{ matrix.arch }}"
+
       - name: Debug list ci-workflows
         run: |
           echo "PWD: $PWD"
@@ -175,6 +178,9 @@ jobs:
           repository: lbetz/ci-workflows
           ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
+
+      - name: Preflight runner requirements
+        run: bash .ci-workflows/hooks/preflight_in_runner.sh test "${{ matrix.arch }}"
 
       # ---------------------------------------------------------------
       # Download binary packages (RPM or DEB)
