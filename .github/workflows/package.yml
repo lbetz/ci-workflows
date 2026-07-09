@@ -264,7 +264,7 @@ jobs:
             printf '%%_signature gpg\n'
             printf '%%_gpg_name %s\n' "${PACKAGE_SIGNING_KEY_ID}"
             printf '%%__gpg /usr/bin/gpg\n'
-            printf "%%__gpg_sign_cmd %%{__gpg} gpg --batch --yes --no-armor --pinentry-mode loopback --passphrase '%s' --digest-algo sha256 --detach-sign --output %%{__signature_filename} %%{__plaintext_filename}\\n" "${PACKAGE_SIGNING_PASSPHRASE}"
+            printf "%%__gpg_sign_cmd %%{__gpg} --batch --yes --no-armor --pinentry-mode loopback --passphrase '%s' --digest-algo sha256 --detach-sign --output %%{__signature_filename} %%{__plaintext_filename}\\n" "${PACKAGE_SIGNING_PASSPHRASE}"
           } > ~/.rpmmacros
 
           shopt -s nullglob
@@ -288,7 +288,7 @@ jobs:
           debs=(dist/unsigned/*.deb)
           if (( ${#debs[@]} > 0 )); then
             if command -v dpkg-sig >/dev/null 2>&1; then
-              export DEBSIGN_PROGRAM="gpg --batch --yes --pinentry-mode loopback --passphrase ${PACKAGE_SIGNING_PASSPHRASE}"
+              export DEBSIGN_PROGRAM=$(printf 'gpg --batch --yes --pinentry-mode loopback --passphrase %q' "$PACKAGE_SIGNING_PASSPHRASE")
               for pkg in "${debs[@]}"; do
                 dpkg-sig -k "${PACKAGE_SIGNING_KEY_ID}" --sign builder "$pkg"
               done
