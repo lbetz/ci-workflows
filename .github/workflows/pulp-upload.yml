@@ -123,7 +123,32 @@ jobs:
           if [[ "${#DEBS[@]}" -eq 0 ]]; then
             echo "No DEB files found in dist/deb"
           else
+            declare -A DEB_BY_ID=()
+            declare -A DEB_SHA_BY_ID=()
+
             for pkg in "${DEBS[@]}"; do
+              package_name=$(dpkg-deb -f "${pkg}" Package)
+              package_version=$(dpkg-deb -f "${pkg}" Version)
+              package_arch=$(dpkg-deb -f "${pkg}" Architecture)
+              package_id="${package_name}|${package_version}|${package_arch}"
+              package_sha=$(sha256sum "${pkg}" | awk '{print $1}')
+
+              if [[ -v DEB_BY_ID["${package_id}"] ]]; then
+                if [[ "${DEB_SHA_BY_ID[${package_id}]}" != "${package_sha}" ]]; then
+                  echo "Conflicting DEB artifacts for ${package_id}:" >&2
+                  echo "  ${DEB_BY_ID[${package_id}]}" >&2
+                  echo "  ${pkg}" >&2
+                  echo "Upload aborted: the same Debian package identity was built more than once with different content." >&2
+                  echo "Use only one Debian-based build per package version, or make the package versions differ." >&2
+                  exit 1
+                fi
+
+                echo "Skipping duplicate identical DEB artifact for ${package_id}: ${pkg}"
+                continue
+              fi
+
+              DEB_BY_ID["${package_id}"]="${pkg}"
+              DEB_SHA_BY_ID["${package_id}"]="${package_sha}"
               pulp deb content upload --repository "${DEB_REPOSITORY}" --file "${pkg}"
             done
           fi

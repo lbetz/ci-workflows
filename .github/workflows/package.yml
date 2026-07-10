@@ -213,7 +213,6 @@ jobs:
         env:
           PACKAGE_SIGNING_PRIVATE_KEY: ${{ secrets.PACKAGE_SIGNING_PRIVATE_KEY }}
           PACKAGE_SIGNING_KEY_ID: ${{ secrets.PACKAGE_SIGNING_KEY_ID }}
-          PACKAGE_SIGNING_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
         run: bash .ci-workflows/hooks/preflight_in_runner.sh sign
 
       - name: Download artifacts to sign
@@ -254,25 +253,15 @@ jobs:
       - name: Sign RPM packages
         env:
           PACKAGE_SIGNING_KEY_ID: ${{ secrets.PACKAGE_SIGNING_KEY_ID }}
-          PACKAGE_SIGNING_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
         run: |
           set -euo pipefail
           : "${PACKAGE_SIGNING_KEY_ID:?PACKAGE_SIGNING_KEY_ID secret is required when sign_packages=true}"
-          : "${PACKAGE_SIGNING_PASSPHRASE:?PACKAGE_SIGNING_PASSPHRASE secret is required when sign_packages=true}"
-
-          passphrase_file=$(mktemp)
-          cleanup() {
-            rm -f "$passphrase_file"
-          }
-          trap cleanup EXIT
-
-          printf '%s' "$PACKAGE_SIGNING_PASSPHRASE" > "$passphrase_file"
 
           {
             printf '%%_signature gpg\n'
             printf '%%_gpg_name %s\n' "${PACKAGE_SIGNING_KEY_ID}"
             printf '%%__gpg /usr/bin/gpg\n'
-            printf '%%__gpg_sign_cmd %%{__gpg} --batch --yes --no-armor --pinentry-mode loopback --passphrase-file %s --digest-algo sha256 --detach-sign --output %%{__signature_filename} %%{__plaintext_filename}\n' "$passphrase_file"
+            printf '%%__gpg_sign_cmd %%{__gpg} --batch --yes --no-armor --digest-algo sha256 --detach-sign --output %%{__signature_filename} %%{__plaintext_filename}\n'
           } > ~/.rpmmacros
 
           shopt -s nullglob
@@ -286,25 +275,15 @@ jobs:
       - name: Sign DEB packages
         env:
           PACKAGE_SIGNING_KEY_ID: ${{ secrets.PACKAGE_SIGNING_KEY_ID }}
-          PACKAGE_SIGNING_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
         run: |
           set -euo pipefail
           : "${PACKAGE_SIGNING_KEY_ID:?PACKAGE_SIGNING_KEY_ID secret is required when sign_packages=true}"
-          : "${PACKAGE_SIGNING_PASSPHRASE:?PACKAGE_SIGNING_PASSPHRASE secret is required when sign_packages=true}"
-
-          passphrase_file=$(mktemp)
-          cleanup() {
-            rm -f "$passphrase_file"
-          }
-          trap cleanup EXIT
-
-          printf '%s' "$PACKAGE_SIGNING_PASSPHRASE" > "$passphrase_file"
 
           shopt -s nullglob
           debs=(dist/unsigned/*.deb)
           if (( ${#debs[@]} > 0 )); then
             if command -v dpkg-sig >/dev/null 2>&1; then
-              export DEBSIGN_PROGRAM=$(printf 'gpg --batch --yes --pinentry-mode loopback --passphrase-file %q' "$passphrase_file")
+              export DEBSIGN_PROGRAM='gpg --batch --yes'
               for pkg in "${debs[@]}"; do
                 dpkg-sig -k "${PACKAGE_SIGNING_KEY_ID}" --sign builder "$pkg"
               done

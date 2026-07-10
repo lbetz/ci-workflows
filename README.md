@@ -111,7 +111,6 @@ Benötigte Secrets im aufrufenden Package-Repo:
 
 - `PACKAGE_SIGNING_PRIVATE_KEY` (ASCII-armored private key)
 - `PACKAGE_SIGNING_KEY_ID`
-- `PACKAGE_SIGNING_PASSPHRASE`
 
 ### 🪝 Projekt-Hooks
 

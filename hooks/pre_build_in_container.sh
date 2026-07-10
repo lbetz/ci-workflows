@@ -77,6 +77,27 @@ elif is_debian || is_ubuntu; then
 
   log "Copying packaging debian/ into upstream/"
   cp -a /workspace/debian /workspace/upstream/
+
+  log "Applying distro-specific Debian version suffix..."
+  cd /workspace/upstream
+  CURRENT_VERSION="$(dpkg-parsechangelog -S Version)"
+  DIST_SUFFIX="${ID}${VERSION_ID//[^0-9A-Za-z]/}"
+
+  if [[ "$CURRENT_VERSION" == *"+$DIST_SUFFIX" ]]; then
+    log "Debian package version already contains suffix: $CURRENT_VERSION"
+  else
+    NEW_VERSION="${CURRENT_VERSION}+${DIST_SUFFIX}"
+    MAINTAINER="$(dpkg-parsechangelog -S Maintainer)"
+    export DEBFULLNAME="${MAINTAINER% <*}"
+    export DEBEMAIL="${MAINTAINER##*<}"
+    DEBEMAIL="${DEBEMAIL%>}"
+    export DEBEMAIL
+
+    dch --distribution stable --force-distribution --newversion "$NEW_VERSION" \
+      "CI rebuild for ${ID} ${VERSION_ID}." >/dev/null
+
+    log "Debian package version set to: $(dpkg-parsechangelog -S Version)"
+  fi
 else
   echo "❌ Unsupported distro for RPM build: $ID"
   exit 1

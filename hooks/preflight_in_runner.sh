@@ -67,7 +67,6 @@ need_binfmt_support() {
 need_signing_secrets() {
   : "${PACKAGE_SIGNING_PRIVATE_KEY:?PACKAGE_SIGNING_PRIVATE_KEY secret is required when sign_packages=true}"
   : "${PACKAGE_SIGNING_KEY_ID:?PACKAGE_SIGNING_KEY_ID secret is required when sign_packages=true}"
-  : "${PACKAGE_SIGNING_PASSPHRASE:?PACKAGE_SIGNING_PASSPHRASE secret is required when sign_packages=true}"
 }
 
 need_upload_secrets() {
