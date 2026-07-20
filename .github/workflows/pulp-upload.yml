@@ -33,7 +33,7 @@ jobs:
       - name: Checkout ci-workflows
         uses: actions/checkout@v4
         with:
-          repository: lbetz/ci-workflows
+          repository: pkging/ci-workflows
           ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
 

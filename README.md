@@ -50,7 +50,7 @@ ci-workflows/
 ```yaml
 jobs:
   package:
-    uses: lbetz/ci-workflows/.github/workflows/package.yml@main
+    uses: pkging/ci-workflows/.github/workflows/package.yml@main
     with:
       ci_workflows_ref: "main"
       source_event_name: "workflow_dispatch"
