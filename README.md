@@ -88,7 +88,7 @@ sign_packages: false
 
 ### Self-Hosted Runner Voraussetzungen
 
-Auf einem Self-Hosted Runner werden mehrere Tools und Rechte vorausgesetzt, die auf `ubuntu-latest` bereits vorhanden sind, im Homelab aber haeufig fehlen:
+Auf einem Self-Hosted Runner werden mehrere Tools und Rechte vorausgesetzt, die auf `ubuntu-latest` bereits vorhanden sind, im pkging aber haeufig fehlen:
 
 - Build und Test benoetigen eine funktionierende Docker-Installation inklusive laufendem Daemon.
 - Multi-Arch Builds und Tests (`aarch64`, `ppc64le`, `s390x`) benoetigen zusaetzlich QEMU bzw. `binfmt_misc`, damit `docker/setup-qemu-action` Container fuer Fremdarchitekturen registrieren kann.
