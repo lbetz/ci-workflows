@@ -99,6 +99,8 @@ elif is_debian || is_ubuntu; then
       GEM_NAME="${GEM_NAME:-ansi}"
       GEM_FILE="${GEM_NAME}-${VER}.gem"
       GEM_URL="https://rubygems.org/downloads/${GEM_FILE}"
+      ORIG_TOPDIR="${PKG}-${VER}"
+      ORIG_STAGE="../build-src/${ORIG_TOPDIR}"
 
       log "No orig.tar produced; using Rubygems fallback for ${GEM_FILE}"
       curl -fL --retry 3 -o "/workspace/${GEM_FILE}" "${GEM_URL}"
@@ -110,6 +112,15 @@ elif is_debian || is_ubuntu; then
         --exclude 'upstream/' \
         --exclude 'rpmbuild/' \
         /workspace/ /workspace/upstream/
+
+      log "Creating synthetic orig tarball for source build..."
+      rm -rf ../build-src
+      mkdir -p "$ORIG_STAGE"
+      rsync -a /workspace/upstream/ "$ORIG_STAGE"/
+      rm -rf "$ORIG_STAGE/debian"
+
+      tar --create --xz --file "$ORIG" --directory ../build-src "$ORIG_TOPDIR"
+      cp "$ORIG" /workspace/
     else
       echo "❌ uscan did not provide ../${PKG}_${VER}.orig.tar.xz and no Rubygems fallback matched." >&2
       exit 1
