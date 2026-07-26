@@ -5,7 +5,7 @@ Ein zentrales Repository mit wiederverwendbaren GitHub Actions Workflows, Hooks 
 ## 🚀 Features
 
 - Multi-Distro (z. B. AlmaLinux, Rocky, Fedora)
-- Multi-Arch (x86_64, aarch64, ppc64le, s390x)
+- Multi-Arch (x86_64/amd64, aarch64/arm64, ppc64le, s390x)
 - Reproduzierbare RPM-Builds in Containern
 - Getrennte Artefakte:
   - Binär-RPMs (`rpm-bin-*`)
@@ -123,7 +123,7 @@ Aufloesung im Upload:
 Auf einem Self-Hosted Runner werden mehrere Tools und Rechte vorausgesetzt, die auf `ubuntu-latest` bereits vorhanden sind, im pkging aber haeufig fehlen:
 
 - Build und Test benoetigen eine funktionierende Docker-Installation inklusive laufendem Daemon.
-- Multi-Arch Builds und Tests (`aarch64`, `ppc64le`, `s390x`) benoetigen zusaetzlich QEMU bzw. `binfmt_misc`, damit `docker/setup-qemu-action` Container fuer Fremdarchitekturen registrieren kann.
+- Multi-Arch Builds und Tests (`aarch64` oder `arm64`, `ppc64le`, `s390x`) benoetigen zusaetzlich QEMU bzw. `binfmt_misc`, damit `docker/setup-qemu-action` Container fuer Fremdarchitekturen registrieren kann.
 - Die Runner-Hooks und der Signing-Job installieren Pakete per `apt-get`, daher ist der aktuelle Workflow fuer Debian-/Ubuntu-basierte Runner mit `apt-get` ausgelegt.
 - Fuer diese Paketinstallation wird `sudo` oder ein Runner mit Root-Rechten benoetigt.
 - Der Signing-Job benoetigt ausserdem `gnupg`, `rpm` und fuer DEB-Signaturen `dpkg-sig` oder `debsigs`; der Workflow installiert diese Pakete aktuell selbst.

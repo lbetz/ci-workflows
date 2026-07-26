@@ -6,11 +6,10 @@ set -euo pipefail
 map_arch_to_platform() {
   local arch="$1"
   case "$arch" in
-    x86_64)  printf '%s' "linux/amd64" ;;
-    aarch64) printf '%s' "linux/arm64" ;;
+    x86_64|amd64)  printf '%s' "linux/amd64" ;;
+    aarch64|arm64) printf '%s' "linux/arm64" ;;
     ppc64le) printf '%s' "linux/ppc64le" ;;
     s390x)   printf '%s' "linux/s390x" ;;
     *) return 1 ;;
   esac
 }
-

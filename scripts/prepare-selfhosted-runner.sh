@@ -14,7 +14,7 @@ fi
 # shellcheck disable=SC1091
 . /etc/os-release
 
-runner_user="${SUDO_USER:-${USER:-}}"
+runner_user="${RUNNER_USER:-${SUDO_USER:-${USER:-}}}"
 
 if [[ -z "$runner_user" ]]; then
   echo "Could not determine the runner user." >&2
@@ -35,10 +35,29 @@ log() {
   printf '[bootstrap] %s\n' "$*"
 }
 
+apt_install_if_missing() {
+  local missing=()
+  local pkg
+
+  for pkg in "$@"; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+      missing+=("$pkg")
+    fi
+  done
+
+  if (( ${#missing[@]} == 0 )); then
+    log "Packages already present: $*"
+    return 0
+  fi
+
+  log "Installing missing packages: ${missing[*]}"
+  apt-get install -y "${missing[@]}"
+}
+
 install_base_packages() {
-  log "Installing base packages"
+  log "Ensuring base packages"
   apt-get update
-  apt-get install -y \
+  apt_install_if_missing \
     ca-certificates \
     curl \
     git \
@@ -56,11 +75,18 @@ install_docker() {
   if command -v docker >/dev/null 2>&1; then
     log "Docker already installed"
   else
-    log "Installing Docker"
-    apt-get install -y docker.io
+    log "Installing Docker from distro packages"
+    apt_install_if_missing docker.io
   fi
 
-  systemctl enable --now docker
+  if docker info >/dev/null 2>&1; then
+    log "Docker daemon already reachable"
+  elif command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q '^docker\.service'; then
+    log "Starting docker.service"
+    systemctl enable --now docker
+  else
+    log "docker command found, but daemon is not reachable and docker.service was not detected"
+  fi
 
   if id -nG "$runner_user" | grep -qw docker; then
     log "User '$runner_user' is already in docker group"
@@ -72,22 +98,33 @@ install_docker() {
 
 configure_sudoers() {
   local sudoers_file="/etc/sudoers.d/90-github-runner"
+  local sudoers_line="$runner_user ALL=(ALL) NOPASSWD:ALL"
 
-  if [[ -f "$sudoers_file" ]] && grep -Fqx "$runner_user ALL=(ALL) NOPASSWD:ALL" "$sudoers_file"; then
+  if [[ -f "$sudoers_file" ]] && grep -Fqx "$sudoers_line" "$sudoers_file"; then
     log "Passwordless sudo already configured for '$runner_user'"
     return 0
   fi
 
   log "Configuring passwordless sudo for '$runner_user'"
-  printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$runner_user" > "$sudoers_file"
+
+  if [[ -f "$sudoers_file" ]]; then
+    printf '%s\n' "$sudoers_line" >> "$sudoers_file"
+  else
+    printf '%s\n' "$sudoers_line" > "$sudoers_file"
+  fi
+
   chmod 440 "$sudoers_file"
   visudo -cf "$sudoers_file"
 }
 
 install_qemu() {
-  log "Installing QEMU and binfmt support"
-  apt-get install -y qemu-user-static binfmt-support
-  systemctl enable --now binfmt-support || true
+  log "Ensuring QEMU and binfmt support"
+  apt_install_if_missing qemu-user-static binfmt-support
+
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q '^binfmt-support\.service'; then
+    systemctl enable --now binfmt-support || true
+  fi
+
   update-binfmts --enable || true
 
   if command -v docker >/dev/null 2>&1; then
@@ -97,7 +134,12 @@ install_qemu() {
 }
 
 install_signing_tools() {
-  log "Installing signing helpers"
+  log "Ensuring signing helpers"
+
+  if command -v dpkg-sig >/dev/null 2>&1 || command -v debsigs >/dev/null 2>&1; then
+    log "DEB signing helper already available"
+    return 0
+  fi
 
   if apt-get install -y dpkg-sig; then
     log "Installed dpkg-sig"
@@ -128,6 +170,7 @@ Next steps:
 Required GitHub secrets:
 - PACKAGE_SIGNING_PRIVATE_KEY
 - PACKAGE_SIGNING_KEY_ID
+- PACKAGE_SIGNING_PASSPHRASE
 - PULP_URL
 - PULP_USERNAME
 - PULP_PASSWORD
