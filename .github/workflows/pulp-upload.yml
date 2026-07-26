@@ -254,7 +254,11 @@ jobs:
 
               DEB_BY_ID["${package_id}"]="${pkg}"
               DEB_SHA_BY_ID["${package_id}"]="${package_sha}"
-              pulp deb content upload --repository "${TARGET_REPOSITORY}" --file "${pkg}"
+              pulp deb content upload \
+                --repository "${TARGET_REPOSITORY}" \
+                --distribution "${{ matrix.target_version }}" \
+                --component main \
+                --file "${pkg}"
             done
           fi
 
