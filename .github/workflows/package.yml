@@ -24,12 +24,6 @@ on:
       sign_packages:
         type: boolean
         default: true
-      rpm_repository:
-        type: string
-        default: "ci-rpm"
-      deb_repository:
-        type: string
-        default: "ci-deb"
       runner_labels:
         type: string
         default: '["ubuntu-latest"]'
@@ -95,6 +89,7 @@ jobs:
 
     outputs:
       matrix: ${{ steps.expand.outputs.matrix }}
+      upload_matrix: ${{ steps.expand.outputs.upload_matrix }}
 
     steps:
       - name: Expand compact matrix
@@ -106,6 +101,19 @@ jobs:
           import json
           import os
           import textwrap
+
+          TARGET_MAP = {
+              "el8": {"target_type": "rpm", "target_family": "el", "target_version": "8"},
+              "el9": {"target_type": "rpm", "target_family": "el", "target_version": "9"},
+              "el10": {"target_type": "rpm", "target_family": "el", "target_version": "10"},
+              "fedora43": {"target_type": "rpm", "target_family": "fedora", "target_version": "43"},
+              "fedora44": {"target_type": "rpm", "target_family": "fedora", "target_version": "44"},
+              "debian11": {"target_type": "apt", "target_family": "debian", "target_version": "bullseye"},
+              "debian12": {"target_type": "apt", "target_family": "debian", "target_version": "bookworm"},
+              "debian13": {"target_type": "apt", "target_family": "debian", "target_version": "trixie"},
+              "ubuntu22": {"target_type": "apt", "target_family": "ubuntu", "target_version": "jammy"},
+              "ubuntu24": {"target_type": "apt", "target_family": "ubuntu", "target_version": "noble"},
+          }
 
           def parse_scalar(value: str) -> str:
               value = value.strip()
@@ -174,17 +182,39 @@ jobs:
               raise ValueError("Matrix input must be a mapping of distro names to architectures")
 
           expanded = {"include": []}
+          upload_targets = {}
 
           for distro, archs in raw.items():
+              if distro not in TARGET_MAP:
+                  raise ValueError(f"Unknown distro {distro!r}. Add it to TARGET_MAP in package.yml before using it.")
+
+              target = TARGET_MAP[distro]
+
               if isinstance(archs, str):
                   archs = [archs]
               elif not isinstance(archs, list):
                   raise ValueError(f"Matrix value for {distro!r} must be a string or list")
               for arch in archs:
-                  expanded["include"].append({"distro": distro, "arch": arch})
+                  expanded["include"].append({
+                      "distro": distro,
+                      "arch": arch,
+                      "target_type": target["target_type"],
+                      "target_family": target["target_family"],
+                      "target_version": target["target_version"],
+                  })
+
+              upload_targets[distro] = {
+                  "distro": distro,
+                  "target_type": target["target_type"],
+                  "target_family": target["target_family"],
+                  "target_version": target["target_version"],
+              }
+
+          upload_matrix = {"include": list(upload_targets.values())}
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"matrix={json.dumps(expanded)}\n")
+              handle.write(f"upload_matrix={json.dumps(upload_matrix)}\n")
           EOF
 
   build:
@@ -314,14 +344,13 @@ jobs:
           if-no-files-found: error
 
   upload:
-    needs: [tag-gate, build, sign]
+    needs: [tag-gate, expand-matrix, build, sign]
     if: always() && needs.tag-gate.outputs.allowed == 'true' && needs.tag-gate.outputs.upload == 'true' && (!inputs.sign_packages || needs.sign.result == 'success')
     uses: ./.github/workflows/pulp-upload.yml
     with:
       ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
       runner_labels: ${{ inputs.runner_labels }}
+      matrix: ${{ needs.expand-matrix.outputs.upload_matrix }}
       rpm_artifact_pattern: ${{ inputs.sign_packages && 'signed-bin-packages' || inputs.rpm_artifact_pattern }}
       deb_artifact_pattern: ${{ inputs.sign_packages && 'signed-bin-packages' || inputs.deb_artifact_pattern }}
-      rpm_repository: ${{ inputs.rpm_repository }}
-      deb_repository: ${{ inputs.deb_repository }}
     secrets: inherit

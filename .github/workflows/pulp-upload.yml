@@ -6,6 +6,9 @@ on:
       ci_workflows_ref:
         type: string
         default: "main"
+      matrix:
+        type: string
+        required: true
       runner_labels:
         type: string
         default: '["ubuntu-latest"]'
@@ -15,12 +18,6 @@ on:
       deb_artifact_pattern:
         type: string
         default: "bin-*"
-      rpm_repository:
-        type: string
-        default: "ci-rpm"
-      deb_repository:
-        type: string
-        default: "ci-deb"
 
 permissions:
   contents: read
@@ -28,6 +25,9 @@ permissions:
 jobs:
   upload:
     runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
 
     steps:
       - name: Checkout ci-workflows
@@ -37,19 +37,119 @@ jobs:
           ref: ${{ inputs.ci_workflows_ref }}
           path: .ci-workflows
 
+      - name: Validate and resolve upload target
+        id: target
+        shell: bash
+        env:
+          TARGET_TYPE: ${{ matrix.target_type }}
+          TARGET_FAMILY: ${{ matrix.target_family }}
+          TARGET_VERSION: ${{ matrix.target_version }}
+        run: |
+          set -euo pipefail
+
+          : "${TARGET_TYPE:?missing matrix.target_type}"
+          : "${TARGET_FAMILY:?missing matrix.target_family}"
+          : "${TARGET_VERSION:?missing matrix.target_version}"
+
+          case "${TARGET_TYPE}" in
+            rpm)
+              case "${TARGET_FAMILY}" in
+                el)
+                  case "${TARGET_VERSION}" in
+                    8|9|10) ;;
+                    *) echo "Unsupported TARGET_VERSION for rpm/el: ${TARGET_VERSION}" >&2; exit 1 ;;
+                  esac
+                  ;;
+                fedora)
+                  case "${TARGET_VERSION}" in
+                    43|44) ;;
+                    *) echo "Unsupported TARGET_VERSION for rpm/fedora: ${TARGET_VERSION}" >&2; exit 1 ;;
+                  esac
+                  ;;
+                sles)
+                  echo "TARGET_FAMILY=sles is defined but has no released versions in allowlist yet" >&2
+                  exit 1
+                  ;;
+                *)
+                  echo "Unsupported TARGET_FAMILY for rpm: ${TARGET_FAMILY}" >&2
+                  exit 1
+                  ;;
+              esac
+              REPOSITORY_NAME="rpm-${TARGET_FAMILY}-${TARGET_VERSION}"
+              BASE_PATH="rpm/${TARGET_FAMILY}/${TARGET_VERSION}"
+              ;;
+            apt)
+              case "${TARGET_FAMILY}" in
+                debian)
+                  case "${TARGET_VERSION}" in
+                    bullseye|bookworm|trixie) ;;
+                    *) echo "Unsupported TARGET_VERSION for apt/debian: ${TARGET_VERSION}" >&2; exit 1 ;;
+                  esac
+                  REPOSITORY_NAME="debian-apt"
+                  BASE_PATH="debian"
+                  ;;
+                ubuntu)
+                  case "${TARGET_VERSION}" in
+                    jammy|noble) ;;
+                    *) echo "Unsupported TARGET_VERSION for apt/ubuntu: ${TARGET_VERSION}" >&2; exit 1 ;;
+                  esac
+                  REPOSITORY_NAME="ubuntu-apt"
+                  BASE_PATH="ubuntu"
+                  ;;
+                *)
+                  echo "Unsupported TARGET_FAMILY for apt: ${TARGET_FAMILY}" >&2
+                  exit 1
+                  ;;
+              esac
+              ;;
+            *)
+              echo "Unsupported TARGET_TYPE: ${TARGET_TYPE}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "repository_name=${REPOSITORY_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "base_path=${BASE_PATH}" >> "${GITHUB_OUTPUT}"
+
       - name: Download RPM artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: ${{ inputs.rpm_artifact_pattern }}
-          path: dist/rpm
+          path: dist/all
           merge-multiple: true
 
       - name: Download DEB artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: ${{ inputs.deb_artifact_pattern }}
-          path: dist/deb
+          path: dist/all
           merge-multiple: true
+
+      - name: Select artifacts for matrix target
+        shell: bash
+        env:
+          DISTRO: ${{ matrix.distro }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/target/rpm dist/target/deb
+
+          shopt -s nullglob
+          for f in dist/all/*.rpm; do
+            if [[ "${f}" == *".${DISTRO}.rpm" ]]; then
+              cp -v "${f}" dist/target/rpm/
+            fi
+          done
+
+          for f in dist/all/*.deb; do
+            if [[ "${f}" == *".${DISTRO}.deb" ]]; then
+              cp -v "${f}" dist/target/deb/
+            fi
+          done
+
+          echo "Selected RPM files for ${DISTRO}:"
+          ls -la dist/target/rpm || true
+          echo "Selected DEB files for ${DISTRO}:"
+          ls -la dist/target/deb || true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -87,41 +187,46 @@ jobs:
           PULP_URL: ${{ secrets.PULP_URL }}
           PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
           PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
-          RPM_REPOSITORY: ${{ inputs.rpm_repository }}
-          DEB_REPOSITORY: ${{ inputs.deb_repository }}
+          TARGET_TYPE: ${{ matrix.target_type }}
+          TARGET_FAMILY: ${{ matrix.target_family }}
+          TARGET_VERSION: ${{ matrix.target_version }}
         run: |
           set -euo pipefail
           bash .ci-workflows/scripts/pulp-bootstrap.sh
 
       - name: Upload RPM packages
+        if: matrix.target_type == 'rpm'
         env:
           PULP_CLI_BASE_URL: ${{ secrets.PULP_URL }}
           PULP_CLI_USERNAME: ${{ secrets.PULP_USERNAME }}
           PULP_CLI_PASSWORD: ${{ secrets.PULP_PASSWORD }}
-          RPM_REPOSITORY: ${{ inputs.rpm_repository }}
+          TARGET_REPOSITORY: ${{ steps.target.outputs.repository_name }}
         run: |
           set -euo pipefail
-          RPM_COUNT=$(find dist/rpm -type f -name '*.rpm' | wc -l | tr -d ' ')
+          RPM_COUNT=$(find dist/target/rpm -type f -name '*.rpm' | wc -l | tr -d ' ')
           if [[ "${RPM_COUNT}" == "0" ]]; then
-            echo "No RPM files found in dist/rpm"
+            echo "No RPM files found for target ${{ matrix.distro }}" >&2
+            exit 1
           else
             pulp rpm content -t package upload \
-              --directory dist/rpm \
-              --repository "${RPM_REPOSITORY}" \
+              --directory dist/target/rpm \
+              --repository "${TARGET_REPOSITORY}" \
               --use-temp-repository
           fi
 
       - name: Upload DEB packages
+        if: matrix.target_type == 'apt'
         env:
           PULP_CLI_BASE_URL: ${{ secrets.PULP_URL }}
           PULP_CLI_USERNAME: ${{ secrets.PULP_USERNAME }}
           PULP_CLI_PASSWORD: ${{ secrets.PULP_PASSWORD }}
-          DEB_REPOSITORY: ${{ inputs.deb_repository }}
+          TARGET_REPOSITORY: ${{ steps.target.outputs.repository_name }}
         run: |
           set -euo pipefail
-          mapfile -t DEBS < <(find dist/deb -type f -name '*.deb')
+          mapfile -t DEBS < <(find dist/target/deb -type f -name '*.deb')
           if [[ "${#DEBS[@]}" -eq 0 ]]; then
-            echo "No DEB files found in dist/deb"
+            echo "No DEB files found for target ${{ matrix.distro }}" >&2
+            exit 1
           else
             declare -A DEB_BY_ID=()
             declare -A DEB_SHA_BY_ID=()
@@ -149,7 +254,7 @@ jobs:
 
               DEB_BY_ID["${package_id}"]="${pkg}"
               DEB_SHA_BY_ID["${package_id}"]="${package_sha}"
-              pulp deb content upload --repository "${DEB_REPOSITORY}" --file "${pkg}"
+              pulp deb content upload --repository "${TARGET_REPOSITORY}" --file "${pkg}"
             done
           fi
 
@@ -158,5 +263,6 @@ jobs:
           PULP_URL: ${{ secrets.PULP_URL }}
         run: |
           set -euo pipefail
-          echo "RPM: ${PULP_URL%/}/pulp/content/${{ inputs.rpm_repository }}/"
-          echo "DEB: ${PULP_URL%/}/pulp/content/${{ inputs.deb_repository }}/"
+          echo "Target distro: ${{ matrix.distro }}"
+          echo "Target tuple: ${{ matrix.target_type }}/${{ matrix.target_family }}/${{ matrix.target_version }}"
+          echo "Content endpoint: ${PULP_URL%/}/pulp/content/${{ steps.target.outputs.base_path }}/"

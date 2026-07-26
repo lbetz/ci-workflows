@@ -1,6 +1,6 @@
 # ci-workflows
 
-Ein zentrales Repository mit wiederverwendbaren GitHub Actions Workflows, Hooks und Container-Skripten zum Bauen und Testen von RPM-Paketen für mehrere Distributionen und Architekturen.
+Ein zentrales Repository mit wiederverwendbaren GitHub Actions Workflows, Hooks und Container-Skripten zum Bauen, Testen, Signieren und Uploaden von RPM- und DEB-Paketen fuer mehrere Distributionen und Architekturen.
 
 ## 🚀 Features
 
@@ -17,6 +17,7 @@ Ein zentrales Repository mit wiederverwendbaren GitHub Actions Workflows, Hooks 
 - Wiederverwendbarer Pulp-Upload-Workflow für Tag-Releases
 - Wiederverwendbarer Package-Orchestrierungsworkflow für Build, Test und Upload
 - Optionale zentrale Paket-Signierung vor dem Upload
+- Zentrale Zielaufloesung fuer Uploads ueber TARGET_TYPE, TARGET_FAMILY und TARGET_VERSION
 
 ## 📁 Repository-Struktur
 
@@ -85,6 +86,37 @@ Nur bei Bedarf abschalten mit:
 ```yaml
 sign_packages: false
 ```
+
+### Upload-Zielmodell (zentral)
+
+Die Zielzuordnung fuer Pulp-Uploads wird zentral in `ci-workflows/.github/workflows/package.yml` aus `matrix.distro` berechnet.
+
+Wichtig:
+
+- Aufrufende Repos geben nur `matrix` (Distro/Arch), `run_upload` und optional `sign_packages` an.
+- Die bisherigen Inputs `rpm_repository` und `deb_repository` werden nicht mehr verwendet.
+- Unbekannte Distros oder ungueltige Zielkombinationen fuehren zu einem sofortigen Hard-Fail.
+
+Aktuelles zentrales Mapping:
+
+| matrix.distro | TARGET_TYPE | TARGET_FAMILY | TARGET_VERSION |
+| --- | --- | --- | --- |
+| `el8` | `rpm` | `el` | `8` |
+| `el9` | `rpm` | `el` | `9` |
+| `el10` | `rpm` | `el` | `10` |
+| `fedora43` | `rpm` | `fedora` | `43` |
+| `fedora44` | `rpm` | `fedora` | `44` |
+| `debian11` | `apt` | `debian` | `bullseye` |
+| `debian12` | `apt` | `debian` | `bookworm` |
+| `debian13` | `apt` | `debian` | `trixie` |
+| `ubuntu22` | `apt` | `ubuntu` | `jammy` |
+| `ubuntu24` | `apt` | `ubuntu` | `noble` |
+
+Aufloesung im Upload:
+
+- RPM: Repository `rpm-<family>-<version>`, Base-Path `rpm/<family>/<version>`
+- APT Debian: Repository `debian-apt`, Base-Path `debian`, Suite ueber `TARGET_VERSION`
+- APT Ubuntu: Repository `ubuntu-apt`, Base-Path `ubuntu`, Suite ueber `TARGET_VERSION`
 
 ### Self-Hosted Runner Voraussetzungen
 
