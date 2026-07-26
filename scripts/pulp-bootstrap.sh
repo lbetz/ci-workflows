@@ -59,7 +59,7 @@ resolve_target() {
           ;;
       esac
       REPOSITORY_NAME="rpm-${TARGET_FAMILY}-${TARGET_VERSION}"
-      BASE_PATH="rpm/${TARGET_FAMILY}/${TARGET_VERSION}"
+      BASE_PATH="${TARGET_FAMILY}/${TARGET_VERSION}"
       ;;
     apt)
       case "${TARGET_FAMILY}" in
