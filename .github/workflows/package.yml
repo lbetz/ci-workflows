@@ -38,12 +38,14 @@ permissions:
   contents: read
 
 jobs:
-  tag-gate:
+  prepare:
     runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
       upload: ${{ steps.check.outputs.upload }}
+      matrix: ${{ steps.expand.outputs.matrix }}
+      upload_matrix: ${{ steps.expand.outputs.upload_matrix }}
 
     steps:
       - name: Validate event and tag pattern
@@ -82,18 +84,9 @@ jobs:
           echo "allowed=true" >> "$GITHUB_OUTPUT"
           echo "upload=false" >> "$GITHUB_OUTPUT"
 
-  expand-matrix:
-    needs: tag-gate
-    if: needs.tag-gate.outputs.allowed == 'true'
-    runs-on: ${{ fromJSON(inputs.runner_labels) }}
-
-    outputs:
-      matrix: ${{ steps.expand.outputs.matrix }}
-      upload_matrix: ${{ steps.expand.outputs.upload_matrix }}
-
-    steps:
       - name: Expand compact matrix
         id: expand
+        if: steps.check.outputs.allowed == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -218,17 +211,17 @@ jobs:
           EOF
 
   build:
-    needs: [tag-gate, expand-matrix]
-    if: needs.tag-gate.outputs.allowed == 'true'
+    needs: [prepare]
+    if: needs.prepare.outputs.allowed == 'true'
     uses: ./.github/workflows/build.yml
     with:
       ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
-      matrix: ${{ needs.expand-matrix.outputs.matrix }}
+      matrix: ${{ needs.prepare.outputs.matrix }}
       runner_labels: ${{ inputs.runner_labels }}
 
   sign:
-    needs: [tag-gate, build]
-    if: needs.tag-gate.outputs.allowed == 'true' && needs.tag-gate.outputs.upload == 'true' && inputs.sign_packages
+    needs: [prepare, build]
+    if: needs.prepare.outputs.allowed == 'true' && needs.prepare.outputs.upload == 'true' && inputs.sign_packages
     runs-on: ${{ fromJSON(inputs.runner_labels) }}
 
     steps:
@@ -344,13 +337,13 @@ jobs:
           if-no-files-found: error
 
   upload:
-    needs: [tag-gate, expand-matrix, build, sign]
-    if: always() && needs.tag-gate.outputs.allowed == 'true' && needs.tag-gate.outputs.upload == 'true' && (!inputs.sign_packages || needs.sign.result == 'success')
+    needs: [prepare, build, sign]
+    if: always() && needs.prepare.outputs.allowed == 'true' && needs.prepare.outputs.upload == 'true' && (!inputs.sign_packages || needs.sign.result == 'success')
     uses: ./.github/workflows/pulp-upload.yml
     with:
       ci_workflows_ref: ${{ inputs.ci_workflows_ref }}
       runner_labels: ${{ inputs.runner_labels }}
-      matrix: ${{ needs.expand-matrix.outputs.upload_matrix }}
+      matrix: ${{ needs.prepare.outputs.upload_matrix }}
       rpm_artifact_pattern: ${{ inputs.sign_packages && 'signed-bin-packages' || inputs.rpm_artifact_pattern }}
       deb_artifact_pattern: ${{ inputs.sign_packages && 'signed-bin-packages' || inputs.deb_artifact_pattern }}
     secrets: inherit
