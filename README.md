@@ -101,9 +101,9 @@ Aktuelles zentrales Mapping:
 
 | matrix.distro | TARGET_TYPE | TARGET_FAMILY | TARGET_VERSION |
 | --- | --- | --- | --- |
-| `el8` | `rpm` | `el` | `8` |
-| `el9` | `rpm` | `el` | `9` |
-| `el10` | `rpm` | `el` | `10` |
+| `el8` | `rpm` | `epel` | `8` |
+| `el9` | `rpm` | `epel` | `9` |
+| `el10` | `rpm` | `epel` | `10` |
 | `fedora43` | `rpm` | `fedora` | `43` |
 | `fedora44` | `rpm` | `fedora` | `44` |
 | `debian11` | `apt` | `debian` | `bullseye` |

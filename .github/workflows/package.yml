@@ -96,9 +96,9 @@ jobs:
           import textwrap
 
           TARGET_MAP = {
-              "el8": {"target_type": "rpm", "target_family": "el", "target_version": "8"},
-              "el9": {"target_type": "rpm", "target_family": "el", "target_version": "9"},
-              "el10": {"target_type": "rpm", "target_family": "el", "target_version": "10"},
+              "el8": {"target_type": "rpm", "target_family": "epel", "target_version": "8"},
+              "el9": {"target_type": "rpm", "target_family": "epel", "target_version": "9"},
+              "el10": {"target_type": "rpm", "target_family": "epel", "target_version": "10"},
               "fedora43": {"target_type": "rpm", "target_family": "fedora", "target_version": "43"},
               "fedora44": {"target_type": "rpm", "target_family": "fedora", "target_version": "44"},
               "debian11": {"target_type": "apt", "target_family": "debian", "target_version": "bullseye"},

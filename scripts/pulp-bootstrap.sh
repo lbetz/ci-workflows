@@ -31,11 +31,11 @@ resolve_target() {
   case "${TARGET_TYPE}" in
     rpm)
       case "${TARGET_FAMILY}" in
-        el)
+        epel)
           case "${TARGET_VERSION}" in
             8|9|10) ;;
             *)
-              log "Unsupported TARGET_VERSION for rpm/el: ${TARGET_VERSION}"
+              log "Unsupported TARGET_VERSION for rpm/epel: ${TARGET_VERSION}"
               exit 1
               ;;
           esac
