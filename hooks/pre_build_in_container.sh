@@ -137,8 +137,27 @@ elif is_debian || is_ubuntu; then
         tar --create --xz --file "$ORIG" --directory ../build-src "$ORIG_TOPDIR"
         cp "$ORIG" /workspace/
       else
-        echo "❌ uscan did not provide ../${PKG}_${VER}.orig.tar.xz and no Rubygems fallback matched." >&2
-        exit 1
+        ORIG_TOPDIR="${PKG}-${VER}"
+        ORIG_STAGE="../build-src/${ORIG_TOPDIR}"
+
+        log "No watch-based upstream archive available; creating synthetic orig tarball from workspace sources."
+        rm -rf ../build-src
+        mkdir -p "$ORIG_STAGE"
+
+        rsync -a \
+          --exclude '.git/' \
+          --exclude '.github/' \
+          --exclude 'upstream/' \
+          --exclude 'rpmbuild/' \
+          --exclude 'debian/' \
+          /workspace/ "$ORIG_STAGE"/
+
+        tar --create --xz --file "$ORIG" --directory ../build-src "$ORIG_TOPDIR"
+        cp "$ORIG" /workspace/
+
+        mkdir -p /workspace/upstream
+        rsync -a "$ORIG_STAGE"/ /workspace/upstream/
+        cp -a /workspace/debian /workspace/upstream/
       fi
     fi
   fi
@@ -147,18 +166,27 @@ elif is_debian || is_ubuntu; then
   cd /workspace/upstream
   CURRENT_VERSION="$(dpkg-parsechangelog -S Version)"
   DIST_SUFFIX="${ID}${VERSION_ID//[^0-9A-Za-z]/}"
+  TARGET_BASE_VERSION="$CURRENT_VERSION"
 
-  if [[ "$CURRENT_VERSION" == *"+$DIST_SUFFIX" ]]; then
+  if [[ "$IS_NATIVE_DEB" == "true" ]]; then
+    TARGET_BASE_VERSION="${CURRENT_VERSION%%-*}"
+    if [[ "$TARGET_BASE_VERSION" != "$CURRENT_VERSION" ]]; then
+      log "Native Debian package detected with revision in version ($CURRENT_VERSION); normalizing to $TARGET_BASE_VERSION"
+    fi
+  fi
+
+  TARGET_VERSION="${TARGET_BASE_VERSION}+${DIST_SUFFIX}"
+
+  if [[ "$CURRENT_VERSION" == "$TARGET_VERSION" ]]; then
     log "Debian package version already contains suffix: $CURRENT_VERSION"
   else
-    NEW_VERSION="${CURRENT_VERSION}+${DIST_SUFFIX}"
     MAINTAINER="$(dpkg-parsechangelog -S Maintainer)"
     export DEBFULLNAME="${MAINTAINER% <*}"
     export DEBEMAIL="${MAINTAINER##*<}"
     DEBEMAIL="${DEBEMAIL%>}"
     export DEBEMAIL
 
-    dch --distribution stable --force-distribution --newversion "$NEW_VERSION" \
+    dch --distribution stable --force-distribution --newversion "$TARGET_VERSION" \
       "CI rebuild for ${ID} ${VERSION_ID}." >/dev/null
 
     log "Debian package version set to: $(dpkg-parsechangelog -S Version)"
