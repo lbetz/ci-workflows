@@ -36,7 +36,6 @@ if is_debian || is_ubuntu; then
     python3-pip \
     diffutils \
     systemd \
-    which \
     tar \
     gzip
 
