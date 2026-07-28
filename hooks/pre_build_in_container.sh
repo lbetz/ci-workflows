@@ -47,83 +47,99 @@ elif is_debian || is_ubuntu; then
   log "DEBUG: Searching for packaging debian directory..."
   find / -maxdepth 5 -type d -name debian 2>/dev/null | grep -v build-src
 
-  log "Running uscan..."
-  if grep -q 'rubygems\.org/api/v1/versions' /workspace/debian/watch 2>/dev/null; then
-    # For Rubygems API watch files we only query version metadata here and keep CI logs concise.
-    uscan_log="$(mktemp)"
-    if ! uscan --report >"$uscan_log" 2>&1; then
-      log "uscan report returned non-zero for Rubygems watch (continuing with fallback)."
-    fi
-
-    if grep -Eiq 'uscan (warn|error):|Newest version' "$uscan_log"; then
-      grep -Ei 'uscan (warn|error):|Newest version' "$uscan_log" || true
-    fi
-    rm -f "$uscan_log"
-  elif ! uscan --download-current-version --force-download; then
-    log "uscan did not download an upstream archive; trying fallback handling."
+  IS_NATIVE_DEB=false
+  if [[ -f /workspace/debian/source/format ]] && grep -Fq '3.0 (native)' /workspace/debian/source/format; then
+    IS_NATIVE_DEB=true
+    log "Detected native Debian source format (3.0 native); skipping uscan/orig tarball flow."
   fi
-
-  PKG=$(dpkg-parsechangelog -S Source)
-  VER_FULL=$(dpkg-parsechangelog -S Version)
-  VER=${VER_FULL%-*}
-
-  ORIG="../${PKG}_${VER}.orig.tar.xz"
 
   rm -rf /workspace/upstream
 
-  if [[ -f "$ORIG" ]]; then
-    log "Extracting upstream source..."
-    rm -rf ../build-src
-    mkdir ../build-src
-    tar --extract --xz --file "$ORIG" --directory ../build-src
-
-    log "Copying orig tarball into /workspace..."
-    cp "$ORIG" /workspace/
-
-    log "Detecting upstream directory..."
-    UPSTREAM_DIR=$(find ../build-src -mindepth 1 -maxdepth 1 -type d | head -n1)
-    log "Upstream directory is: $UPSTREAM_DIR"
-
-    log "Removing upstream debian/ directory..."
-    rm -rf "$UPSTREAM_DIR/debian"
-
-    log "Copying upstream code into /workspace..."
+  if [[ "$IS_NATIVE_DEB" == "true" ]]; then
     mkdir -p /workspace/upstream
-    rsync -a "$UPSTREAM_DIR"/ /workspace/upstream/
-
-    log "Copying packaging debian/ into upstream/"
-    cp -a /workspace/debian /workspace/upstream/
+    rsync -a \
+      --exclude '.git/' \
+      --exclude '.github/' \
+      --exclude 'upstream/' \
+      --exclude 'rpmbuild/' \
+      /workspace/ /workspace/upstream/
   else
-    if grep -q 'rubygems\.org' /workspace/debian/watch 2>/dev/null; then
-      GEM_NAME="$(sed -n 's#.*/versions/\([^/]*\)/latest\.json.*#\1#p' /workspace/debian/watch | head -n1)"
-      GEM_NAME="${GEM_NAME:-ansi}"
-      GEM_FILE="${GEM_NAME}-${VER}.gem"
-      GEM_URL="https://rubygems.org/downloads/${GEM_FILE}"
-      ORIG_TOPDIR="${PKG}-${VER}"
-      ORIG_STAGE="../build-src/${ORIG_TOPDIR}"
+    log "Running uscan..."
+    if grep -q 'rubygems\.org/api/v1/versions' /workspace/debian/watch 2>/dev/null; then
+      # For Rubygems API watch files we only query version metadata here and keep CI logs concise.
+      uscan_log="$(mktemp)"
+      if ! uscan --report >"$uscan_log" 2>&1; then
+        log "uscan report returned non-zero for Rubygems watch (continuing with fallback)."
+      fi
 
-      log "No orig.tar produced; using Rubygems fallback for ${GEM_FILE}"
-      curl -fL --retry 3 -o "/workspace/${GEM_FILE}" "${GEM_URL}"
+      if grep -Eiq 'uscan (warn|error):|Newest version' "$uscan_log"; then
+        grep -Ei 'uscan (warn|error):|Newest version' "$uscan_log" || true
+      fi
+      rm -f "$uscan_log"
+    elif ! uscan --download-current-version --force-download; then
+      log "uscan did not download an upstream archive; trying fallback handling."
+    fi
 
-      mkdir -p /workspace/upstream
-      rsync -a \
-        --exclude '.git/' \
-        --exclude '.github/' \
-        --exclude 'upstream/' \
-        --exclude 'rpmbuild/' \
-        /workspace/ /workspace/upstream/
+    PKG=$(dpkg-parsechangelog -S Source)
+    VER_FULL=$(dpkg-parsechangelog -S Version)
+    VER=${VER_FULL%-*}
 
-      log "Creating synthetic orig tarball for source build..."
+    ORIG="../${PKG}_${VER}.orig.tar.xz"
+
+    if [[ -f "$ORIG" ]]; then
+      log "Extracting upstream source..."
       rm -rf ../build-src
-      mkdir -p "$ORIG_STAGE"
-      rsync -a /workspace/upstream/ "$ORIG_STAGE"/
-      rm -rf "$ORIG_STAGE/debian"
+      mkdir ../build-src
+      tar --extract --xz --file "$ORIG" --directory ../build-src
 
-      tar --create --xz --file "$ORIG" --directory ../build-src "$ORIG_TOPDIR"
+      log "Copying orig tarball into /workspace..."
       cp "$ORIG" /workspace/
+
+      log "Detecting upstream directory..."
+      UPSTREAM_DIR=$(find ../build-src -mindepth 1 -maxdepth 1 -type d | head -n1)
+      log "Upstream directory is: $UPSTREAM_DIR"
+
+      log "Removing upstream debian/ directory..."
+      rm -rf "$UPSTREAM_DIR/debian"
+
+      log "Copying upstream code into /workspace..."
+      mkdir -p /workspace/upstream
+      rsync -a "$UPSTREAM_DIR"/ /workspace/upstream/
+
+      log "Copying packaging debian/ into upstream/"
+      cp -a /workspace/debian /workspace/upstream/
     else
-      echo "❌ uscan did not provide ../${PKG}_${VER}.orig.tar.xz and no Rubygems fallback matched." >&2
-      exit 1
+      if grep -q 'rubygems\.org' /workspace/debian/watch 2>/dev/null; then
+        GEM_NAME="$(sed -n 's#.*/versions/\([^/]*\)/latest\.json.*#\1#p' /workspace/debian/watch | head -n1)"
+        GEM_NAME="${GEM_NAME:-ansi}"
+        GEM_FILE="${GEM_NAME}-${VER}.gem"
+        GEM_URL="https://rubygems.org/downloads/${GEM_FILE}"
+        ORIG_TOPDIR="${PKG}-${VER}"
+        ORIG_STAGE="../build-src/${ORIG_TOPDIR}"
+
+        log "No orig.tar produced; using Rubygems fallback for ${GEM_FILE}"
+        curl -fL --retry 3 -o "/workspace/${GEM_FILE}" "${GEM_URL}"
+
+        mkdir -p /workspace/upstream
+        rsync -a \
+          --exclude '.git/' \
+          --exclude '.github/' \
+          --exclude 'upstream/' \
+          --exclude 'rpmbuild/' \
+          /workspace/ /workspace/upstream/
+
+        log "Creating synthetic orig tarball for source build..."
+        rm -rf ../build-src
+        mkdir -p "$ORIG_STAGE"
+        rsync -a /workspace/upstream/ "$ORIG_STAGE"/
+        rm -rf "$ORIG_STAGE/debian"
+
+        tar --create --xz --file "$ORIG" --directory ../build-src "$ORIG_TOPDIR"
+        cp "$ORIG" /workspace/
+      else
+        echo "❌ uscan did not provide ../${PKG}_${VER}.orig.tar.xz and no Rubygems fallback matched." >&2
+        exit 1
+      fi
     fi
   fi
 
