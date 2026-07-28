@@ -76,8 +76,14 @@ jobs:
       - name: Resolve container image
         id: image
         run: |
+          set -euo pipefail
           source .ci-workflows/hooks/lib/container_images.sh
-          echo "image=$(get_container_image '${{ matrix.distro }}')" >> "$GITHUB_OUTPUT"
+          image="$(get_container_image '${{ matrix.distro }}')"
+          if [[ -z "$image" ]]; then
+            echo "Container image mapping returned empty for distro: ${{ matrix.distro }}" >&2
+            exit 1
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Build package in container
         env:
@@ -222,8 +228,14 @@ jobs:
       - name: Resolve container image
         id: image
         run: |
+          set -euo pipefail
           source .ci-workflows/hooks/lib/container_images.sh
-          echo "image=$(get_container_image '${{ matrix.distro }}')" >> "$GITHUB_OUTPUT"
+          image="$(get_container_image '${{ matrix.distro }}')"
+          if [[ -z "$image" ]]; then
+            echo "Container image mapping returned empty for distro: ${{ matrix.distro }}" >&2
+            exit 1
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Install & test package in container
         env:
