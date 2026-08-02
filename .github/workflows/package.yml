@@ -267,9 +267,12 @@ jobs:
       - name: Import signing key
         env:
           PACKAGE_SIGNING_PRIVATE_KEY: ${{ secrets.PACKAGE_SIGNING_PRIVATE_KEY }}
+          PACKAGE_SIGNING_KEY_ID: ${{ secrets.PACKAGE_SIGNING_KEY_ID }}
         run: |
           set -euo pipefail
           : "${PACKAGE_SIGNING_PRIVATE_KEY:?PACKAGE_SIGNING_PRIVATE_KEY secret is required when sign_packages=true}"
+          : "${PACKAGE_SIGNING_KEY_ID:?PACKAGE_SIGNING_KEY_ID secret is required when sign_packages=true}"
+          echo "Using package signing key ID: ${PACKAGE_SIGNING_KEY_ID}"
           printf '%s\n' "$PACKAGE_SIGNING_PRIVATE_KEY" > signing.key.asc
           gpg --batch --import signing.key.asc
 
@@ -279,6 +282,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${PACKAGE_SIGNING_KEY_ID:?PACKAGE_SIGNING_KEY_ID secret is required when sign_packages=true}"
+          echo "Signing RPM packages with key ID: ${PACKAGE_SIGNING_KEY_ID}"
 
           {
             printf '%%_signature gpg\n'
@@ -301,6 +305,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${PACKAGE_SIGNING_KEY_ID:?PACKAGE_SIGNING_KEY_ID secret is required when sign_packages=true}"
+          echo "Signing DEB packages with key ID: ${PACKAGE_SIGNING_KEY_ID}"
 
           shopt -s nullglob
           debs=(dist/unsigned/*.deb)

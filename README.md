@@ -139,10 +139,21 @@ Wenn ein Runner diese Voraussetzungen nicht erfuellt, sollte entweder ein passen
 
 Die zentrale Pipeline signiert RPM- und DEB-Pakete standardmaessig vor dem Upload.
 
-Benötigte Secrets im aufrufenden Package-Repo:
+Im Workflow werden dabei genau zwei Werte aus dem aufrufenden Package-Repo erwartet:
 
 - `PACKAGE_SIGNING_PRIVATE_KEY` (ASCII-armored private key)
 - `PACKAGE_SIGNING_KEY_ID`
+
+Im Signing-Job von [ci-workflows/.github/workflows/package.yml](ci-workflows/.github/workflows/package.yml) wird der private Schlüssel importiert und die Key-ID für RPM- und DEB-Signaturen verwendet. Das ist der Schlüssel, der für die eigentliche Paket-Signierung im CI-Workflow gebraucht wird.
+
+Im Repository dieser Arbeitsumgebung existieren zusätzlich zwei Export-Dateien für GPG-Schlüsselmaterial:
+
+- [gpg-signing-export-20260709-184342/private-key.asc](gpg-signing-export-20260709-184342/private-key.asc) und [gpg-signing-export-20260709-184342/public-key.asc](gpg-signing-export-20260709-184342/public-key.asc)
+- [gpg-signing-export-20260709-184342/pulp-signing-private.asc](gpg-signing-export-20260709-184342/pulp-signing-private.asc) und [gpg-signing-export-20260709-184342/pulp-signing-public.asc](gpg-signing-export-20260709-184342/pulp-signing-public.asc)
+
+Diese beiden Schlüsselpaare sind nicht identisch. Sie sind getrennte Exporte, die in unterschiedlichen Kontexten verwendet werden können: ein allgemeiner Signing-Key für die Paket-Signierung und ein Pulp-/Repository-spezifischer Key für den Upload- und Signing-Flow. In der aktuellen GitHub-Secret-Setup-Routine wird der gewählte private Schlüssel über [scripts/set-gh-pulp-secrets.sh](scripts/set-gh-pulp-secrets.sh) als `PACKAGE_SIGNING_PRIVATE_KEY` in die Ziele überführt.
+
+Für ein neues Setup empfiehlt sich daher: genau einen Signing-Key pro Zweck wählen, diesen privaten Schlüssel und die zugehörige Key-ID als GitHub-Secrets speichern und dabei sicherstellen, dass der Secret-Wert und die Key-ID zueinander passen.
 
 ### 🪝 Projekt-Hooks
 
