@@ -182,6 +182,29 @@ jobs:
             --username "${PULP_USERNAME}" \
             --password "${PULP_PASSWORD}"
 
+      - name: Probe Pulp authentication
+        env:
+          PULP_URL: ${{ secrets.PULP_URL }}
+          PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+          PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          base_url="${PULP_URL%/}"
+          if [[ -z "${PULP_URL}" || -z "${PULP_USERNAME}" || -z "${PULP_PASSWORD}" ]]; then
+            echo "PULP_URL, PULP_USERNAME, and PULP_PASSWORD must all be set" >&2
+            exit 1
+          fi
+
+          echo "Pulp endpoint: ${base_url}"
+          echo "Pulp username: ${PULP_USERNAME}"
+          echo "Pulp password length: ${#PULP_PASSWORD}"
+          curl -sS -o /tmp/pulp-root.json -w 'HTTP %{http_code}\n' -u "${PULP_USERNAME}:${PULP_PASSWORD}" "${base_url}/pulp/api/v3/" || true
+          if [[ -s /tmp/pulp-root.json ]]; then
+            echo "Pulp root response:" >&2
+            head -c 400 /tmp/pulp-root.json >&2
+            echo >&2
+          fi
+
       - name: Bootstrap repositories/distributions
         env:
           PULP_URL: ${{ secrets.PULP_URL }}

@@ -99,38 +99,74 @@ resolve_target() {
 }
 
 ensure_rpm_repository() {
-  if pulp rpm repository show --name "${REPOSITORY_NAME}" >/dev/null 2>&1; then
+  local output
+  if output=$(pulp rpm repository show --name "${REPOSITORY_NAME}" 2>&1); then
     log "RPM repository exists: ${REPOSITORY_NAME}"
-  else
+  elif grep -qiE 'not found|does not exist|404' <<<"${output}"; then
     log "Creating RPM repository: ${REPOSITORY_NAME}"
-    pulp rpm repository create --name "${REPOSITORY_NAME}"
+    if ! output=$(pulp rpm repository create --name "${REPOSITORY_NAME}" 2>&1); then
+      echo "${output}" >&2
+      log "Failed to create RPM repository '${REPOSITORY_NAME}'. Check PULP_URL/PULP_USERNAME/PULP_PASSWORD and Pulp permissions."
+      exit 1
+    fi
+  else
+    echo "${output}" >&2
+    log "Unable to verify RPM repository existence; aborting"
+    exit 1
   fi
 }
 
 ensure_deb_repository() {
-  if pulp deb repository show --name "${REPOSITORY_NAME}" >/dev/null 2>&1; then
+  local output
+  if output=$(pulp deb repository show --name "${REPOSITORY_NAME}" 2>&1); then
     log "DEB repository exists: ${REPOSITORY_NAME}"
-  else
+  elif grep -qiE 'not found|does not exist|404' <<<"${output}"; then
     log "Creating DEB repository: ${REPOSITORY_NAME}"
-    pulp deb repository create --name "${REPOSITORY_NAME}"
+    if ! output=$(pulp deb repository create --name "${REPOSITORY_NAME}" 2>&1); then
+      echo "${output}" >&2
+      log "Failed to create DEB repository '${REPOSITORY_NAME}'. Check PULP_URL/PULP_USERNAME/PULP_PASSWORD and Pulp permissions."
+      exit 1
+    fi
+  else
+    echo "${output}" >&2
+    log "Unable to verify DEB repository existence; aborting"
+    exit 1
   fi
 }
 
 ensure_rpm_distribution() {
-  if pulp rpm distribution show --name "${REPOSITORY_NAME}" >/dev/null 2>&1; then
+  local output
+  if output=$(pulp rpm distribution show --name "${REPOSITORY_NAME}" 2>&1); then
     log "RPM distribution exists: ${REPOSITORY_NAME}"
-  else
+  elif grep -qiE 'not found|does not exist|404' <<<"${output}"; then
     log "Creating RPM distribution: ${REPOSITORY_NAME} (base-path: ${BASE_PATH})"
-    pulp rpm distribution create --name "${REPOSITORY_NAME}" --repository "${REPOSITORY_NAME}" --base-path "${BASE_PATH}"
+    if ! output=$(pulp rpm distribution create --name "${REPOSITORY_NAME}" --repository "${REPOSITORY_NAME}" --base-path "${BASE_PATH}" 2>&1); then
+      echo "${output}" >&2
+      log "Failed to create RPM distribution '${REPOSITORY_NAME}'. Check PULP_URL/PULP_USERNAME/PULP_PASSWORD and Pulp permissions."
+      exit 1
+    fi
+  else
+    echo "${output}" >&2
+    log "Unable to verify RPM distribution existence; aborting"
+    exit 1
   fi
 }
 
 ensure_deb_distribution() {
-  if pulp deb distribution show --name "${REPOSITORY_NAME}" >/dev/null 2>&1; then
+  local output
+  if output=$(pulp deb distribution show --name "${REPOSITORY_NAME}" 2>&1); then
     log "DEB distribution exists: ${REPOSITORY_NAME}"
-  else
+  elif grep -qiE 'not found|does not exist|404' <<<"${output}"; then
     log "Creating DEB distribution: ${REPOSITORY_NAME} (base-path: ${BASE_PATH}, suite: ${TARGET_VERSION})"
-    pulp deb distribution create --name "${REPOSITORY_NAME}" --repository "${REPOSITORY_NAME}" --base-path "${BASE_PATH}"
+    if ! output=$(pulp deb distribution create --name "${REPOSITORY_NAME}" --repository "${REPOSITORY_NAME}" --base-path "${BASE_PATH}" 2>&1); then
+      echo "${output}" >&2
+      log "Failed to create DEB distribution '${REPOSITORY_NAME}'. Check PULP_URL/PULP_USERNAME/PULP_PASSWORD and Pulp permissions."
+      exit 1
+    fi
+  else
+    echo "${output}" >&2
+    log "Unable to verify DEB distribution existence; aborting"
+    exit 1
   fi
 }
 

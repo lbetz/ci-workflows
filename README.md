@@ -146,6 +146,8 @@ Im Workflow werden dabei genau zwei Werte aus dem aufrufenden Package-Repo erwar
 
 Im Signing-Job von [ci-workflows/.github/workflows/package.yml](ci-workflows/.github/workflows/package.yml) wird der private Schlüssel importiert und die Key-ID für RPM- und DEB-Signaturen verwendet. Das ist der Schlüssel, der für die eigentliche Paket-Signierung im CI-Workflow gebraucht wird.
 
+Wichtig: Diese Werte müssen im aufrufenden Workflow-Repository als GitHub-Secrets vorhanden sein und dem Reusable-Workflow über `secrets: inherit` mitgegeben werden. Die Preflight-Hook liest sie direkt aus der Job-Umgebung; wenn sie dort fehlen, bricht der Lauf mit einer Meldung wie `PACKAGE_SIGNING_PRIVATE_KEY secret is required when sign_packages=true` ab.
+
 Im Repository dieser Arbeitsumgebung existieren zusätzlich zwei Export-Dateien für GPG-Schlüsselmaterial:
 
 - [gpg-signing-export-20260709-184342/private-key.asc](gpg-signing-export-20260709-184342/private-key.asc) und [gpg-signing-export-20260709-184342/public-key.asc](gpg-signing-export-20260709-184342/public-key.asc)
