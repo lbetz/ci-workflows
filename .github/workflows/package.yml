@@ -44,6 +44,7 @@ jobs:
     outputs:
       allowed: ${{ steps.check.outputs.allowed }}
       upload: ${{ steps.check.outputs.upload }}
+      upload_target_type: ${{ steps.check.outputs.upload_target_type }}
       matrix: ${{ steps.expand.outputs.matrix }}
       upload_matrix: ${{ steps.expand.outputs.upload_matrix }}
 
@@ -58,36 +59,52 @@ jobs:
           RUN_UPLOAD: ${{ inputs.run_upload }}
         run: |
           set -euo pipefail
+          semver_re='v?[0-9]+\.[0-9]+\.[0-9]+'
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "allowed=true" >> "$GITHUB_OUTPUT"
             if [[ "$RUN_UPLOAD" == "true" ]]; then
               echo "upload=true" >> "$GITHUB_OUTPUT"
+              echo "upload_target_type=all" >> "$GITHUB_OUTPUT"
             else
               echo "upload=false" >> "$GITHUB_OUTPUT"
+              echo "upload_target_type=none" >> "$GITHUB_OUTPUT"
             fi
             exit 0
           fi
 
           if [[ "$EVENT_NAME" == "push" && "$REF_TYPE" == "tag" ]]; then
-            if [[ "$REF_NAME" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$REF_NAME" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+-.+$ ]]; then
+            if [[ "$REF_NAME" =~ ^rpm/(${semver_re})(-.+)?$ ]]; then
               echo "allowed=true" >> "$GITHUB_OUTPUT"
               echo "upload=true" >> "$GITHUB_OUTPUT"
+              echo "upload_target_type=rpm" >> "$GITHUB_OUTPUT"
+            elif [[ "$REF_NAME" =~ ^deb/(${semver_re})(-.+)?$ ]]; then
+              echo "allowed=true" >> "$GITHUB_OUTPUT"
+              echo "upload=true" >> "$GITHUB_OUTPUT"
+              echo "upload_target_type=apt" >> "$GITHUB_OUTPUT"
+            elif [[ "$REF_NAME" =~ ^${semver_re}$ ]] || [[ "$REF_NAME" =~ ^${semver_re}-.+$ ]]; then
+              echo "allowed=true" >> "$GITHUB_OUTPUT"
+              echo "upload=true" >> "$GITHUB_OUTPUT"
+              echo "upload_target_type=all" >> "$GITHUB_OUTPUT"
             else
               echo "allowed=false" >> "$GITHUB_OUTPUT"
               echo "upload=false" >> "$GITHUB_OUTPUT"
-              echo "Tag $REF_NAME does not match <semver>, <semver>-<text>, v<semver>, or v<semver>-<text>" >&2
+              echo "upload_target_type=none" >> "$GITHUB_OUTPUT"
+              echo "Tag $REF_NAME does not match <semver>, <semver>-<text>, rpm/<semver>, rpm/<semver>-<text>, deb/<semver>, or deb/<semver>-<text>" >&2
             fi
             exit 0
           fi
 
           echo "allowed=true" >> "$GITHUB_OUTPUT"
           echo "upload=false" >> "$GITHUB_OUTPUT"
+          echo "upload_target_type=none" >> "$GITHUB_OUTPUT"
 
       - name: Expand compact matrix
         id: expand
         if: steps.check.outputs.allowed == 'true'
         shell: bash
+        env:
+          UPLOAD_TARGET_TYPE: ${{ steps.check.outputs.upload_target_type }}
         run: |
           set -euo pipefail
           python3 << 'EOF'
@@ -174,6 +191,10 @@ jobs:
           if not isinstance(raw, dict):
               raise ValueError("Matrix input must be a mapping of distro names to architectures")
 
+          upload_target_type = os.environ.get("UPLOAD_TARGET_TYPE", "all").strip()
+          if upload_target_type not in {"all", "rpm", "apt", "none"}:
+              raise ValueError(f"Unsupported upload target type: {upload_target_type!r}")
+
           expanded = {"include": []}
           upload_targets = {}
 
@@ -202,6 +223,18 @@ jobs:
                   "target_family": target["target_family"],
                   "target_version": target["target_version"],
               }
+
+          if upload_target_type == "rpm":
+              upload_targets = {k: v for k, v in upload_targets.items() if v["target_type"] == "rpm"}
+          elif upload_target_type == "apt":
+              upload_targets = {k: v for k, v in upload_targets.items() if v["target_type"] == "apt"}
+          elif upload_target_type == "none":
+              upload_targets = {}
+
+          if upload_target_type in {"rpm", "apt"} and not upload_targets:
+              raise ValueError(
+                  f"Tag requests upload target type {upload_target_type!r}, but matrix has no matching distros"
+              )
 
           upload_matrix = {"include": list(upload_targets.values())}
 

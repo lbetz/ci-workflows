@@ -87,6 +87,31 @@ Nur bei Bedarf abschalten mit:
 sign_packages: false
 ```
 
+### Tag-Policy fuer Uploads
+
+Der Reusable-Workflow in [ci-workflows/.github/workflows/package.yml](.github/workflows/package.yml) unterscheidet Uploads nach Tag-Namen:
+
+- `rpm/vX.Y.Z` oder `rpm/vX.Y.Z-suffix`: Upload nur fuer RPM-Ziele (`target_type=rpm`)
+- `deb/vX.Y.Z` oder `deb/vX.Y.Z-suffix`: Upload nur fuer APT/DEB-Ziele (`target_type=apt`)
+- `vX.Y.Z` oder `vX.Y.Z-suffix` (ohne Prefix): Upload fuer alle Zieltypen in der Matrix
+
+Nicht passende Tags werden abgewiesen (kein Upload).
+
+Beispiele:
+
+- `rpm/v1.0.0-2` -> nur RPM Upload
+- `deb/v1.0.0` -> nur DEB/APT Upload
+- `v1.0.0-2` -> RPM und DEB/APT Upload
+
+Wichtig fuer aufrufende Repositories: Bei `workflow_call` muss der Event-/Ref-Kontext an den Reusable-Workflow durchgereicht werden, damit Tag-Pushes korrekt ausgewertet werden:
+
+```yaml
+with:
+  source_event_name: ${{ github.event_name }}
+  source_ref_name: ${{ github.ref_name }}
+  source_ref_type: ${{ github.ref_type }}
+```
+
 ### Upload-Zielmodell (zentral)
 
 Die Zielzuordnung fuer Pulp-Uploads wird zentral in `ci-workflows/.github/workflows/package.yml` aus `matrix.distro` berechnet.
