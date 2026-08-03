@@ -17,7 +17,7 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     env:
-      DOCKER_CONFIG: /tmp/.docker
+      DOCKER_CONFIG: ${{ github.workspace }}/.docker-config
 
     steps:
       - name: Checkout ci-workflows
@@ -31,6 +31,8 @@ jobs:
 
       - name: Login to GHCR
         uses: docker/login-action@v3
+        env:
+          DOCKER_CONFIG: ${{ github.workspace }}/.docker-config
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
