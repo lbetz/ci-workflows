@@ -8,8 +8,7 @@ log "Preparing runner for test..."
 
 # hier nur Dinge, die der Runner braucht (z.B. docker, jq etc.)
 # Beispiel:
-if is_debian || is_ubuntu; then
+if is_debian_like; then
   sudo apt-get update -y
   sudo apt-get install -y --no-install-recommends jq
 fi
-

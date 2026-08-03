@@ -27,7 +27,7 @@ fi
 # ---------------------------------------------------------------------------
 # DEB-BASED DISTROS
 # ---------------------------------------------------------------------------
-if is_debian || is_ubuntu; then
+if is_debian_like; then
   log "Installing test dependencies for DEB-based distro..."
 
   apt-get update

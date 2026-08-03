@@ -29,7 +29,7 @@ if is_el || is_fedora; then
   dnf clean all
 
   mkdir -p /workspace/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-elif is_debian || is_ubuntu; then
+elif is_debian_like; then
   log "Preparing debian build environment..."
   apt-get update -y
   apt-get install -y \

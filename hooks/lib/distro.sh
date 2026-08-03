@@ -27,8 +27,10 @@ is_el() {
 }
 
 is_fedora()  { [[ "$ID" == "fedora" ]]; }
-is_debian()  { [[ "$ID" == "debian" ]] || [[ "$ID_LIKE" == *"debian"* ]]; }
-is_ubuntu()  { [[ "$ID" == "ubuntu" ]] || [[ "$ID_LIKE" == *"ubuntu"* ]]; }
+# Keep distro predicates strict and explicit.
+is_debian()  { [[ "$ID" == "debian" ]]; }
+is_ubuntu()  { [[ "$ID" == "ubuntu" ]]; }
+is_debian_like() { is_debian || is_ubuntu || [[ "$ID_LIKE" == *"debian"* ]]; }
 is_suse()    { [[ "$ID" == opensuse* ]] || [[ "$ID_LIKE" == *"suse"* ]]; }
 is_alpine()  { [[ "$ID" == "alpine" ]]; }
 is_arch()    { [[ "$ID" == "arch" ]] || [[ "$ID_LIKE" == *"arch"* ]]; }

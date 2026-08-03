@@ -7,7 +7,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh" || true
 
 log "Preparing runner for build..."
 
-if is_debian || is_ubuntu; then
+if is_debian_like; then
   sudo apt-get update -y
   sudo apt-get install -y --no-install-recommends \
     rpm \
@@ -18,4 +18,3 @@ fi
 chmod +x "$(dirname "${BASH_SOURCE[0]}")"/*.sh        2>/dev/null || true
 chmod +x "$(dirname "${BASH_SOURCE[0]}")/lib/"*.sh    2>/dev/null || true
 chmod +x .github/hooks/*.sh                           2>/dev/null || true
-
