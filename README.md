@@ -18,6 +18,7 @@ Ein zentrales Repository mit wiederverwendbaren GitHub Actions Workflows, Hooks 
 - Wiederverwendbarer Package-Orchestrierungsworkflow für Build, Test und Upload
 - Optionale zentrale Paket-Signierung vor dem Upload
 - Zentrale Zielaufloesung fuer Uploads ueber TARGET_TYPE, TARGET_FAMILY und TARGET_VERSION
+- Taegliches Spiegeln der Build-Containerimages von Docker Hub nach GHCR
 
 ## 📁 Repository-Struktur
 
@@ -26,6 +27,7 @@ ci-workflows/
 │
 ├── .github/workflows/
 │   ├── build.yml              # Reusable Build/Test Workflow
+│   ├── mirror-build-images.yml # Daily mirror Docker Hub -> GHCR
 │   ├── package.yml            # Reusable Package Orchestration Workflow
 │   └── pulp-upload.yml        # Reusable Pulp Upload Workflow
 │
@@ -86,6 +88,95 @@ Nur bei Bedarf abschalten mit:
 ```yaml
 sign_packages: false
 ```
+
+### Build-Images nach GHCR spiegeln (taeglich)
+
+Der Workflow [ci-workflows/.github/workflows/mirror-build-images.yml](.github/workflows/mirror-build-images.yml) spiegelt die benoetigten Basis-Images taeglich von Docker Hub nach GHCR:
+
+- Quelle: `almalinux`, `fedora`, `debian`, `ubuntu` (feste Tag-Liste im Workflow)
+- Ziel: `ghcr.io/pkging/build-images/<name>:<tag>`
+- Trigger:
+  - `schedule` (taeglich)
+  - `workflow_dispatch` (manuell)
+
+Auth-Modell:
+
+- Kein manuell gepflegtes Secret noetig.
+- Push nach GHCR laeuft ueber `GITHUB_TOKEN`.
+- Der Workflow braucht `permissions: packages: write`.
+
+Konsumenten (Build/Test):
+
+- [ci-workflows/.github/workflows/build.yml](.github/workflows/build.yml) nutzt GHCR-Login mit `GITHUB_TOKEN` und `permissions: packages: read`.
+- Die Image-Aufloesung erfolgt ueber [ci-workflows/hooks/lib/container_images.sh](hooks/lib/container_images.sh).
+
+### GitHub Klickreihenfolge: Package auf Public stellen
+
+Falls bei einem Package steht "Setting is disabled by organization administrators", ist die Public-Visibility auf Org- oder Enterprise-Ebene gesperrt.
+
+Org-Ebene freigeben (Owner/Admin):
+
+1. GitHub -> Organization `pkging` -> `Settings`
+2. In der linken Navigation `Packages` oeffnen
+3. Richtlinie fuer Package-Visibility suchen (Container/GHCR)
+4. Option aktivieren, dass Packages auf `Public` gestellt werden duerfen
+5. Speichern
+
+Danach Package sichtbar machen:
+
+1. Organization `pkging` -> `Packages`
+2. Package oeffnen (z. B. `build-images/debian`)
+3. `Package settings`
+4. `Change visibility` -> `Public`
+5. Bestaetigen
+
+Wenn weiterhin gesperrt:
+
+1. Als Enterprise-Admin in die Enterprise-Settings wechseln
+2. Dort die uebergeordnete Policy fuer Package-Visibility (GHCR) freigeben
+3. Anschliessend die Org-/Package-Schritte oben erneut ausfuehren
+
+### Troubleshooting: Mirror und GHCR Pulls
+
+`docker: unauthorized` oder `error from registry: unauthorized`
+
+- Ursache: Repo darf privates GHCR-Package nicht lesen.
+- Pruefen:
+  - Im Package unter `Manage Actions access` ist das konsumierende Repo mit `Read` eingetragen.
+  - Im Workflow sind `permissions: packages: read` gesetzt.
+  - Der Schritt `Login to GHCR` laeuft vor `docker run`.
+
+`denied: permission denied` beim Mirror-Workflow
+
+- Ursache: Schreibrechte auf GHCR fehlen.
+- Pruefen:
+  - Im Mirror-Workflow sind `permissions: packages: write` gesetzt.
+  - Die Org erlaubt Package-Push fuer Actions in diesem Repo.
+  - Workflow laeuft im Repo `pkging/ci-workflows` (Owner muss zur Ziel-Registry passen).
+
+`manifest unknown` oder Tag nicht gefunden
+
+- Ursache: Tag wurde noch nicht gespiegelt oder Tippfehler im Mapping.
+- Pruefen:
+  - Mirror-Workflow manuell starten (`workflow_dispatch`).
+  - Ziel-Tag in GHCR existiert.
+  - Mapping in [ci-workflows/hooks/lib/container_images.sh](hooks/lib/container_images.sh) stimmt exakt mit dem GHCR-Tag ueberein.
+
+Docker Hub `429 Too Many Requests` im Mirror-Workflow
+
+- Ursache: Mirror zieht zu oft/parallel anonym von Docker Hub.
+- Optionen:
+  - Spiegel-Zeitpunkt auf weniger frequenten Slot legen.
+  - Doppelte/unnuetze Runs vermeiden (Concurrency ist bereits gesetzt).
+  - Falls noetig zusaetzlich Docker-Hub-Auth fuer den Mirror aktivieren.
+
+`pull access denied` im Build/Test trotz erfolgreichem Login
+
+- Ursache: Caller-Workflow begrenzt Token-Rechte.
+- Pruefen:
+  - Im aufrufenden Repository eigener `permissions`-Block vorhanden?
+  - Falls ja: dort explizit `packages: read` setzen.
+  - Reusable-Workflow-Rechte alleine reichen sonst nicht immer.
 
 ### Tag-Policy fuer Uploads
 
