@@ -33,15 +33,21 @@ if [[ "$PACKAGE_FORMAT" == "rpm" ]]; then
   log "Setting up rpmbuild directory structure..."
   TOPDIR="/workspace/rpmbuild"
   mkdir -p "$TOPDIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-  
+
+  # Some older rpmdevtools/spectool builds (notably on EL8) still resolve
+  # %{_sourcedir} via /root/rpmbuild even when _topdir is overridden.
+  # Keep that legacy path wired to our workspace topdir for compatibility.
+  mkdir -p /root/rpmbuild
+  ln -sfn "$TOPDIR/SOURCES" /root/rpmbuild/SOURCES
+
   # ---------------------------------------------------------------------------
   # SPEC FILE VALIDATION
   # ---------------------------------------------------------------------------
   log "Searching for SPEC file in /workspace/SPECS..."
-  
+
   shopt -s nullglob
   specs=(/workspace/*.spec)
-  
+
   if (( ${#specs[@]} == 0 )); then
     echo "❌ No SPEC file found in /workspace/" >&2
     exit 1
@@ -50,33 +56,34 @@ if [[ "$PACKAGE_FORMAT" == "rpm" ]]; then
     printf '%s\n' "${specs[@]}"
     exit 1
   fi
-  
+
   SPECFILE="${specs[0]}"
   log "Using SPEC file: $SPECFILE"
-  
+
   cp -v "$SPECFILE" "$TOPDIR/SPECS/"
-  
+
   # ---------------------------------------------------------------------------
   # DOWNLOAD SOURCES VIA SPECTOOL
   # ---------------------------------------------------------------------------
   log "Downloading sources via spectool..."
-  
+
   spectool -g -R \
     --define "_topdir $TOPDIR" \
+    --define "_sourcedir $TOPDIR/SOURCES" \
     "$TOPDIR/SPECS/$(basename "$SPECFILE")"
-  
+
   log "Downloaded sources:"
   ls -l "$TOPDIR/SOURCES"
-  
+
   # ---------------------------------------------------------------------------
   # RUN RPMBUILD
   # ---------------------------------------------------------------------------
   log "Running rpmbuild..."
-  
+
   rpmbuild \
     --define "_topdir $TOPDIR" \
     -ba "$TOPDIR/SPECS/$(basename "$SPECFILE")"
-  
+
   log "rpmbuild completed successfully."
 else
   # -------------------------------------------------------------------------
@@ -105,4 +112,3 @@ if [ -f /workspace/.github/hooks/post_build.sh ]; then
 fi
 
 log "Build container script finished."
-
