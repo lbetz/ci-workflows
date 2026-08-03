@@ -5,16 +5,16 @@ get_container_image() {
   local distro="$1"
 
   case "$distro" in
-    el8)      echo "almalinux:8" ;;
-    el9)      echo "almalinux:9" ;;
-    el10)     echo "almalinux:10" ;;
-    fedora43) echo "fedora:43" ;;
-    fedora44) echo "fedora:44" ;;
-    debian11) echo "debian:11" ;;
-    debian12) echo "debian:12" ;;
-    debian13) echo "debian:13" ;;
-    ubuntu22) echo "ubuntu:22.04" ;;
-    ubuntu24) echo "ubuntu:24.04" ;;
+    el8)      echo "ghcr.io/pkging/build-images/almalinux:8" ;;
+    el9)      echo "ghcr.io/pkging/build-images/almalinux:9" ;;
+    el10)     echo "ghcr.io/pkging/build-images/almalinux:10" ;;
+    fedora43) echo "ghcr.io/pkging/build-images/fedora:43" ;;
+    fedora44) echo "ghcr.io/pkging/build-images/fedora:44" ;;
+    debian11) echo "ghcr.io/pkging/build-images/debian:11" ;;
+    debian12) echo "ghcr.io/pkging/build-images/debian:12" ;;
+    debian13) echo "ghcr.io/pkging/build-images/debian:13" ;;
+    ubuntu22) echo "ghcr.io/pkging/build-images/ubuntu:22.04" ;;
+    ubuntu24) echo "ghcr.io/pkging/build-images/ubuntu:24.04" ;;
     *)
       echo "Unsupported distro key for container image mapping: $distro" >&2
       return 1
