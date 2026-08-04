@@ -286,6 +286,26 @@ Für ein neues Setup empfiehlt sich daher: genau einen Signing-Key pro Zweck wä
 
 Alle Hooks sind optional.
 
+#### Reihenfolge und Verantwortlichkeiten im Test-Container
+
+Die Test-Hooks werden in fester Reihenfolge ausgeführt:
+
+1. pre_test.sh
+2. smoke.sh
+3. post_test.sh
+
+Semantik:
+
+- pre_test.sh: Bereitet den Testlauf vor (z. B. zusätzliche Repositories, Testdaten, Umgebung).
+- smoke.sh: Enthält die eigentlichen Funktionsprüfungen nach der Paketinstallation.
+- post_test.sh: Nachgelagerte Schritte wie Cleanup, Log-Sammlung oder zusätzliche Diagnose.
+
+Wichtig: Der Testlauf verwendet set -euo pipefail. Wenn smoke.sh mit Fehler beendet wird, wird post_test.sh nicht mehr ausgeführt.
+
+Referenz der tatsächlichen Aufrufreihenfolge:
+
+- [ci-workflows/hooks/test_in_container.sh](hooks/test_in_container.sh)
+
 ### 📦 Artefakte
 
 * rpm-bin-<distro>-<arch> → Binär-RPMs
