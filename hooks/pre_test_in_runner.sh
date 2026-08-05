@@ -44,9 +44,32 @@ apt_safe() {
   done
 }
 
+install_ubuntu_mirror_keyring() {
+  local key_url="${APT_UBUNTU_MIRROR_KEY_URL:-https://packages.private.prefork.de/keys/prefork-packages.asc}"
+  local key_tmp="${TMPDIR:-/tmp}/pulp-signing-public.asc"
+  local keyring_path="/usr/share/keyrings/pulp-signing.gpg"
+
+  if ! command -v curl >/dev/null 2>&1; then
+    log "curl is required to install the Ubuntu mirror signing key"
+    return 1
+  fi
+
+  if ! command -v gpg >/dev/null 2>&1; then
+    log "gpg is required to install the Ubuntu mirror signing key"
+    return 1
+  fi
+
+  log "Installing Ubuntu mirror signing key from ${key_url}"
+  curl -fsSL "$key_url" -o "$key_tmp"
+  sudo install -d -m 0755 /usr/share/keyrings
+  sudo gpg --batch --dearmor -o "$keyring_path" "$key_tmp"
+  sudo chmod 0644 "$keyring_path"
+}
+
 configure_ubuntu_mirror() {
   local mirror_root="${APT_UBUNTU_MIRROR_ROOT:-}"
   local suite=""
+  local keyring_path="/usr/share/keyrings/pulp-signing.gpg"
 
   if [[ -z "${mirror_root}" ]]; then
     return 0
@@ -70,6 +93,7 @@ configure_ubuntu_mirror() {
   mirror_root="${mirror_root%/}"
   log "Rewriting Ubuntu apt sources to ${mirror_root}"
 
+  install_ubuntu_mirror_keyring
   sudo install -d -m 0755 /etc/apt/sources.list.d
   if sudo test -f /etc/apt/sources.list && ! sudo test -f /etc/apt/sources.list.orig; then
     sudo cp /etc/apt/sources.list /etc/apt/sources.list.orig
@@ -86,21 +110,25 @@ Types: deb
 URIs: ${mirror_root}/ubuntu-base
 Suites: ${suite}
 Components: main restricted universe multiverse
+Signed-By: ${keyring_path}
 
 Types: deb
 URIs: ${mirror_root}/ubuntu-updates-base
 Suites: ${suite}-updates
 Components: main restricted universe multiverse
+Signed-By: ${keyring_path}
 
 Types: deb
 URIs: ${mirror_root}/ubuntu-backports-base
 Suites: ${suite}-backports
 Components: main restricted universe multiverse
+Signed-By: ${keyring_path}
 
 Types: deb
 URIs: ${mirror_root}/ubuntu-security-base
 Suites: ${suite}-security
 Components: main restricted universe multiverse
+Signed-By: ${keyring_path}
 EOF2
 }
 
