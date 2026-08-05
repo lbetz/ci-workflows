@@ -44,9 +44,70 @@ apt_safe() {
   done
 }
 
+configure_ubuntu_mirror() {
+  local mirror_root="${APT_UBUNTU_MIRROR_ROOT:-}"
+  local suite=""
+
+  if [[ -z "${mirror_root}" ]]; then
+    return 0
+  fi
+
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    if [[ "${ID:-}" != "ubuntu" ]]; then
+      log "APT_UBUNTU_MIRROR_ROOT is set, but runner is not Ubuntu; skipping mirror rewrite"
+      return 0
+    fi
+    suite="${VERSION_CODENAME:-}"
+  fi
+
+  if [[ -z "${suite}" ]]; then
+    log "Ubuntu mirror rewrite requested but VERSION_CODENAME is unavailable"
+    return 1
+  fi
+
+  mirror_root="${mirror_root%/}"
+  log "Rewriting Ubuntu apt sources to ${mirror_root}"
+
+  sudo install -d -m 0755 /etc/apt/sources.list.d
+  if sudo test -f /etc/apt/sources.list && ! sudo test -f /etc/apt/sources.list.orig; then
+    sudo cp /etc/apt/sources.list /etc/apt/sources.list.orig
+  fi
+  if sudo test -f /etc/apt/sources.list.d/ubuntu.sources && ! sudo test -f /etc/apt/sources.list.d/ubuntu.sources.orig; then
+    sudo cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources.orig
+  fi
+  if sudo test -f /etc/apt/sources.list.d/ubuntu.sources && ! sudo test -f /etc/apt/sources.list.d/ubuntu.sources.disabled; then
+    sudo mv /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources.disabled
+  fi
+  printf '' | sudo tee /etc/apt/sources.list >/dev/null
+  cat <<EOF2 | sudo tee /etc/apt/sources.list.d/pulp-ubuntu-mirror.sources >/dev/null
+Types: deb
+URIs: ${mirror_root}/ubuntu-base
+Suites: ${suite}
+Components: main restricted universe multiverse
+
+Types: deb
+URIs: ${mirror_root}/ubuntu-updates-base
+Suites: ${suite}-updates
+Components: main restricted universe multiverse
+
+Types: deb
+URIs: ${mirror_root}/ubuntu-backports-base
+Suites: ${suite}-backports
+Components: main restricted universe multiverse
+
+Types: deb
+URIs: ${mirror_root}/ubuntu-security-base
+Suites: ${suite}-security
+Components: main restricted universe multiverse
+EOF2
+}
+
 # hier nur Dinge, die der Runner braucht (z.B. docker, jq etc.)
 # Beispiel:
 if is_debian_like; then
+  configure_ubuntu_mirror
   apt_safe update -y
   apt_safe install -y --no-install-recommends jq
 fi
