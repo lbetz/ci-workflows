@@ -164,7 +164,6 @@ EOF2
 }
 
 if is_debian_like; then
-  configure_ubuntu_mirror
   apt_safe update -y
   apt_safe install -y --no-install-recommends \
     rpm \
